@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShopAgent — Customer Portal</title>
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Sans',sans-serif;background:#0a0a0f;color:#f0f0ff;min-height:100vh}
+  .header{background:#12121a;border-bottom:1px solid #1e1e2e;padding:14px 24px;display:flex;align-items:center;gap:12px}
+  .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:20px}
+  .logo span{color:#6c63ff}
+  .container{max-width:720px;margin:0 auto;padding:32px 20px}
+  .card{background:#12121a;border:1px solid #1e1e2e;border-radius:14px;padding:24px;margin-bottom:20px}
+  .card-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:16px;color:#f0f0ff}
+  label{font-size:12px;color:#9090b8;display:block;margin-bottom:5px;margin-top:12px;letter-spacing:.3px}
+  input{width:100%;background:#1a1a26;border:1px solid #2a2a3d;border-radius:8px;padding:10px 12px;color:#f0f0ff;font-family:'DM Sans',sans-serif;font-size:14px;outline:none}
+  input:focus{border-color:#6c63ff}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 20px;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all .15s;width:100%;margin-top:14px}
+  .btn-primary{background:#6c63ff;color:white}
+  .btn-primary:hover{background:#7c74ff}
+  .btn-ghost{background:transparent;color:#9090b8;border:1px solid #2a2a3d}
+  .btn-ghost:hover{border-color:#6c63ff;color:#b8b3ff}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .stat{text-align:center;padding:16px}
+  .stat-val{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;color:#6c63ff}
+  .stat-label{font-size:12px;color:#5a5a7a;margin-top:4px}
+  .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+  .pkg{border:1px solid #2a2a3d;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s;text-align:center}
+  .pkg:hover,.pkg.selected{border-color:#6c63ff;background:rgba(108,99,255,.08)}
+  .pkg-price{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:#f0f0ff;margin:6px 0 2px}
+  .pkg-mins{font-size:14px;color:#9090b8}
+  .pkg-per{font-size:11px;color:#5a5a7a;margin-top:3px}
+  .pkg-badge{font-size:10px;background:#6c63ff;color:white;padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:6px}
+  .pkgs{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+  .call-banner{background:linear-gradient(135deg,rgba(108,99,255,.15),rgba(6,182,212,.08));border:1px solid rgba(108,99,255,.3);border-radius:14px;padding:24px;text-align:center;margin-bottom:20px}
+  .call-number{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#6c63ff;margin:8px 0}
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+  .badge-success{background:#14532d33;color:#22c55e}
+  .badge-warning{background:#78350f33;color:#f59e0b}
+  .badge-info{background:#164e6333;color:#06b6d4}
+  .order-row{padding:12px 0;border-bottom:1px solid #1e1e2e22;display:flex;justify-content:space-between;align-items:center}
+  .order-row:last-child{border-bottom:none}
+  .msg{padding:10px 14px;border-radius:8px;font-size:13px;margin-top:12px}
+  .msg-success{background:#14532d22;border:1px solid #22c55e33;color:#22c55e}
+  .msg-error{background:#7f1d1d22;border:1px solid #ef444433;color:#ef4444}
+  #stripe-element{background:#1a1a26;border:1px solid #2a2a3d;border-radius:8px;padding:12px;margin-top:6px}
+  .tab-row{display:flex;gap:4px;border-bottom:1px solid #1e1e2e;margin-bottom:20px}
+  .tab{padding:9px 16px;font-size:13px;color:#5a5a7a;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:#6c63ff;border-bottom-color:#6c63ff}
+  .hidden{display:none}
+  .phone-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:20px}
+  .phone-screen h2{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;margin-bottom:8px}
+  .phone-screen p{color:#9090b8;font-size:14px;margin-bottom:24px}
+  .progress{height:4px;background:#1a1a26;border-radius:2px;overflow:hidden;margin-top:8px}
+  .progress-fill{height:100%;background:#6c63ff;border-radius:2px;transition:width .4s}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">Shop<span>Agent</span></div>
+  <span style="font-size:13px;color:#5a5a7a;margin-left:4px">Customer Portal</span>
+  <div id="header-phone" style="margin-left:auto;font-size:12px;color:#5a5a7a"></div>
+</div>
+
+<!-- Phone entry screen -->
+<div id="screen-phone" class="phone-screen">
+  <div style="font-size:48px;margin-bottom:16px">🛍️</div>
+  <h2>Welcome to ShopAgent</h2>
+  <p>Enter your phone number to access your account,<br>check your minute balance, and top up.</p>
+  <div style="width:100%;max-width:320px">
+    <label>Your phone number</label>
+    <input id="phone-input" type="tel" placeholder="+1 (555) 000-0000" style="text-align:center;font-size:16px;margin-bottom:10px">
+    <button class="btn btn-primary" onclick="loadAccount()">Access my account →</button>
+    <div id="phone-msg"></div>
+  </div>
+</div>
+
+<!-- Main portal -->
+<div id="screen-portal" class="container hidden">
+
+  <div class="call-banner">
+    <div style="font-size:13px;color:#9090b8">Call us to shop</div>
+    <div class="call-number">+1 (845) 617-0148</div>
+    <div style="font-size:12px;color:#5a5a7a">AI agent answers · asks filtering questions · texts you product photos · places your order</div>
+  </div>
+
+  <div class="stats-row">
+    <div class="card stat" style="margin:0">
+      <div class="stat-val" id="stat-balance">0</div>
+      <div class="stat-label">Minutes left</div>
+      <div class="progress" style="margin-top:8px"><div class="progress-fill" id="balance-bar" style="width:0%"></div></div>
+    </div>
+    <div class="card stat" style="margin:0">
+      <div class="stat-val" id="stat-orders">0</div>
+      <div class="stat-label">Total orders</div>
+    </div>
+    <div class="card stat" style="margin:0">
+      <div class="stat-val" id="stat-spent">$0</div>
+      <div class="stat-label">Total spent</div>
+    </div>
+  </div>
+
+  <div class="tab-row">
+    <div class="tab active" onclick="showTab('topup')">Top up minutes</div>
+    <div class="tab" onclick="showTab('orders')">My orders</div>
+    <div class="tab" onclick="showTab('profile')">Profile</div>
+  </div>
+
+  <!-- TOP UP TAB -->
+  <div id="tab-topup">
+    <div class="card">
+      <div class="card-title">Choose a minute package</div>
+      <div class="pkgs">
+        <div class="pkg" onclick="selectPkg('starter',this)">
+          <div class="pkg-price">$9.99</div>
+          <div class="pkg-mins">15 minutes</div>
+          <div class="pkg-per">$0.67/min</div>
+        </div>
+        <div class="pkg selected" onclick="selectPkg('popular',this)">
+          <div class="pkg-badge">Most popular</div>
+          <div class="pkg-price">$17.99</div>
+          <div class="pkg-mins">30 minutes</div>
+          <div class="pkg-per">$0.60/min</div>
+        </div>
+        <div class="pkg" onclick="selectPkg('value',this)">
+          <div class="pkg-price">$29.99</div>
+          <div class="pkg-mins">60 minutes</div>
+          <div class="pkg-per">$0.50/min</div>
+        </div>
+        <div class="pkg" onclick="selectPkg('power',this)">
+          <div class="pkg-price">$49.99</div>
+          <div class="pkg-mins">120 minutes</div>
+          <div class="pkg-per">$0.42/min</div>
+        </div>
+      </div>
+
+      <div id="payment-section">
+        <label>Card details</label>
+        <div id="stripe-element"></div>
+        <button class="btn btn-primary" id="pay-btn" onclick="handlePayment()">Complete purchase</button>
+        <div style="font-size:11px;color:#5a5a7a;text-align:center;margin-top:8px">Secured by Stripe · Minutes added instantly after payment</div>
+        <div id="pay-msg"></div>
+      </div>
+
+      <div id="demo-section" class="hidden">
+        <div class="msg msg-success" style="margin-top:0">Demo mode — Stripe not configured. Click below to add minutes directly for testing.</div>
+        <button class="btn btn-primary" onclick="demoTopup()">Add minutes (demo)</button>
+        <div id="demo-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ORDERS TAB -->
+  <div id="tab-orders" class="hidden">
+    <div class="card">
+      <div class="card-title">Your orders</div>
+      <div id="orders-list">
+        <div style="color:#5a5a7a;font-size:13px;text-align:center;padding:20px">No orders yet — call us to place your first order!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE TAB -->
+  <div id="tab-profile" class="hidden">
+    <div class="card">
+      <div class="card-title">Your profile</div>
+      <label>Phone number</label>
+      <input id="profile-phone" readonly style="opacity:.5">
+      <label>Your name</label>
+      <input id="profile-name" placeholder="Enter your name">
+      <label>Email address</label>
+      <input id="profile-email" type="email" placeholder="For order receipts">
+      <button class="btn btn-primary" onclick="saveProfile()">Save profile</button>
+      <div id="profile-msg"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const BASE = window.location.origin;
+let currentPhone = "";
+let selectedPackage = "popular";
+let stripe, cardElement;
+
+// Init Stripe if key available
+const STRIPE_KEY = "STRIPE_PUBLISHABLE_KEY_PLACEHOLDER";
+if (STRIPE_KEY && STRIPE_KEY !== "STRIPE_PUBLISHABLE_KEY_PLACEHOLDER") {
+  stripe = Stripe(STRIPE_KEY);
+  const elements = stripe.elements({ appearance: { theme: "night" } });
+  cardElement = elements.create("card", { style: { base: { color: "#f0f0ff", fontFamily: "DM Sans, sans-serif", fontSize: "14px" } } });
+} else {
+  document.getElementById("payment-section").classList.add("hidden");
+  document.getElementById("demo-section").classList.remove("hidden");
+}
+
+function selectPkg(id, el) {
+  selectedPackage = id;
+  document.querySelectorAll(".pkg").forEach(p => p.classList.remove("selected"));
+  el.classList.add("selected");
+}
+
+function showTab(name) {
+  ["topup","orders","profile"].forEach(t => {
+    document.getElementById("tab-" + t).classList.toggle("hidden", t !== name);
+  });
+  document.querySelectorAll(".tab").forEach((t, i) => {
+    t.classList.toggle("active", ["topup","orders","profile"][i] === name);
+  });
+}
+
+async function loadAccount() {
+  const raw = document.getElementById("phone-input").value.trim();
+  if (!raw) return showMsg("phone-msg", "Please enter your phone number", "error");
+  const digits = raw.replace(/\D/g,"");
+  if (digits.length < 10) return showMsg("phone-msg", "Please enter a valid phone number", "error");
+  currentPhone = digits.startsWith("1") ? "+" + digits : "+1" + digits;
+
+  showMsg("phone-msg", "Loading your account...", "success");
+  try {
+    const res = await fetch(BASE + "/api/customer/" + encodeURIComponent(currentPhone));
+    const data = await res.json();
+    populatePortal(data);
+    document.getElementById("screen-phone").classList.add("hidden");
+    document.getElementById("screen-portal").classList.remove("hidden");
+    document.getElementById("header-phone").textContent = currentPhone;
+    if (cardElement) {
+      cardElement.mount("#stripe-element");
+    }
+  } catch (e) {
+    showMsg("phone-msg", "Could not load account. Try again.", "error");
+  }
+}
+
+function populatePortal(data) {
+  const c = data.customer;
+  const bal = c.balance_minutes || 0;
+  document.getElementById("stat-balance").textContent = bal;
+  document.getElementById("stat-orders").textContent = c.total_orders || 0;
+  document.getElementById("stat-spent").textContent = "$" + (parseFloat(c.total_spent || 0)).toFixed(0);
+  document.getElementById("balance-bar").style.width = Math.min(100, (bal / 120) * 100) + "%";
+  document.getElementById("profile-phone").value = c.phone || currentPhone;
+  document.getElementById("profile-name").value = c.name || "";
+  document.getElementById("profile-email").value = c.email || "";
+
+  const orders = data.orders || [];
+  const ol = document.getElementById("orders-list");
+  if (orders.length === 0) {
+    ol.innerHTML = '<div style="color:#5a5a7a;font-size:13px;text-align:center;padding:20px">No orders yet — call us to place your first order!</div>';
+  } else {
+    ol.innerHTML = orders.map(o => `
+      <div class="order-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:#f0f0ff">${o.product_title || "Order"}</div>
+          <div style="font-size:11px;color:#5a5a7a">${o.order_id} · ${new Date(o.created_at).toLocaleDateString()}</div>
+          ${o.estimated_delivery ? '<div style="font-size:11px;color:#22c55e">Delivery: ' + o.estimated_delivery + '</div>' : ""}
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:600;color:#6c63ff">${o.product_price || ""}</div>
+          <span class="badge ${o.status === "delivered" ? "badge-success" : o.status === "placed" ? "badge-info" : "badge-warning"}">${o.status}</span>
+        </div>
+      </div>`).join("");
+  }
+}
+
+async function handlePayment() {
+  if (!stripe || !cardElement) return;
+  const btn = document.getElementById("pay-btn");
+  btn.disabled = true;
+  btn.textContent = "Processing...";
+  showMsg("pay-msg", "", "");
+
+  try {
+    const res = await fetch(BASE + "/api/topup/create-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: currentPhone, package_id: selectedPackage }),
+    });
+    const data = await res.json();
+    if (data.demo) {
+      showMsg("pay-msg", "Minutes added! Refreshing...", "success");
+      setTimeout(() => location.reload(), 1500);
+      return;
+    }
+    const { error, paymentIntent } = await stripe.confirmCardPayment(data.client_secret, {
+      payment_method: { card: cardElement },
+    });
+    if (error) {
+      showMsg("pay-msg", error.message, "error");
+    } else if (paymentIntent.status === "succeeded") {
+      showMsg("pay-msg", "Payment successful! Minutes added to your account.", "success");
+      setTimeout(async () => {
+        const r = await fetch(BASE + "/api/customer/" + encodeURIComponent(currentPhone));
+        populatePortal(await r.json());
+      }, 2000);
+    }
+  } catch (e) {
+    showMsg("pay-msg", "Payment failed: " + e.message, "error");
+  }
+  btn.disabled = false;
+  btn.textContent = "Complete purchase";
+}
+
+async function demoTopup() {
+  const pkgMins = { starter: 15, popular: 30, value: 60, power: 120 };
+  try {
+    const res = await fetch(BASE + "/api/topup/create-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: currentPhone, package_id: selectedPackage }),
+    });
+    const data = await res.json();
+    if (data.demo || data.success) {
+      showMsg("demo-msg", pkgMins[selectedPackage] + " minutes added! Refreshing...", "success");
+      setTimeout(async () => {
+        const r = await fetch(BASE + "/api/customer/" + encodeURIComponent(currentPhone));
+        populatePortal(await r.json());
+        showTab("topup");
+      }, 1500);
+    }
+  } catch (e) {
+    showMsg("demo-msg", "Error: " + e.message, "error");
+  }
+}
+
+async function saveProfile() {
+  try {
+    await fetch(BASE + "/api/customer/" + encodeURIComponent(currentPhone) + "/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: document.getElementById("profile-name").value,
+        email: document.getElementById("profile-email").value,
+      }),
+    });
+    showMsg("profile-msg", "Profile saved!", "success");
+  } catch (e) {
+    showMsg("profile-msg", "Error saving profile", "error");
+  }
+}
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = "msg " + (type === "success" ? "msg-success" : type === "error" ? "msg-error" : "");
+  el.textContent = text;
+}
+
+document.getElementById("phone-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") loadAccount();
+});
+</script>
+</body>
+</html>
