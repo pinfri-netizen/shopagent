@@ -188,8 +188,8 @@ let selectedPackage = "popular";
 let stripe, cardElement;
 
 // Init Stripe if key available
-const STRIPE_KEY = "STRIPE_PUBLISHABLE_KEY_PLACEHOLDER";
-if (STRIPE_KEY && STRIPE_KEY !== "STRIPE_PUBLISHABLE_KEY_PLACEHOLDER") {
+const STRIPE_KEY = "pk_test_51ThFUwL6zm0FMvuYNoWn2PZekkeO0Mks4gFWpYXi0ImHs8MfjkWhLP1rVeY2tbom9Ue48Fad3yUWfaCJVcClpasO00qGzxz4mC";
+if (STRIPE_KEY && STRIPE_KEY !== "pk_test_51ThFUwL6zm0FMvuYNoWn2PZekkeO0Mks4gFWpYXi0ImHs8MfjkWhLP1rVeY2tbom9Ue48Fad3yUWfaCJVcClpasO00qGzxz4mC") {
   stripe = Stripe(STRIPE_KEY);
   const elements = stripe.elements({ appearance: { theme: "night" } });
   cardElement = elements.create("card", { style: { base: { color: "#f0f0ff", fontFamily: "DM Sans, sans-serif", fontSize: "14px" } } });
