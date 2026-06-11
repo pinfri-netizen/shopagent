@@ -2,7 +2,11 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const app = express();
-app.use(express.json());
+
+app.use((req, res, next) => {
+  if (req.path === "/api/topup/webhook") return next();
+  express.json()(req, res, next);
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 const { searchProducts } = require("./tools/search");
@@ -11,45 +15,43 @@ const { placeOrder } = require("./tools/order");
 const { trackPackage } = require("./tools/tracking");
 const { getBalance, deductMinutes } = require("./tools/billing");
 
-// Log all env vars on startup (masked) so we can debug
 console.log("[ENV] DATABASE_URL:", process.env.DATABASE_URL ? "SET (" + process.env.DATABASE_URL.slice(0,30) + "...)" : "NOT SET");
 console.log("[ENV] ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "SET" : "NOT SET");
 console.log("[ENV] TWILIO_ACCOUNT_SID:", process.env.TWILIO_ACCOUNT_SID ? "SET" : "NOT SET");
 
-// Init DB with retry
-async function initDbWithRetry(attempts = 5) {
-  const db = require("./db");
-  for (let i = 1; i <= attempts; i++) {
-    try {
-      await db.initDb();
-      console.log("[DB] Connected successfully");
-      return db;
-    } catch (err) {
-      console.error("[DB] Attempt " + i + " failed:", err.message);
-      if (i < attempts) {
-        console.log("[DB] Retrying in 3 seconds...");
-        await new Promise(r => setTimeout(r, 3000));
-      }
-    }
-  }
-  console.error("[DB] All connection attempts failed — running without database");
-  return null;
-}
+// Start server immediately — DB connects in background
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("ShopAgent v2 running on port " + PORT));
 
+// Init DB in background after server is already listening
 let dbReady = false;
-initDbWithRetry().then(db => { if (db) dbReady = true; });
+let dbModule = null;
 
-function getDb() {
-  if (!dbReady) throw new Error("Database not ready yet");
-  return require("./db");
+async function initDb() {
+  try {
+    dbModule = require("./db");
+    await dbModule.initDb();
+    dbReady = true;
+    console.log("[DB] Ready");
+  } catch (err) {
+    console.error("[DB] Init error:", err.message);
+    // Retry after 5 seconds
+    setTimeout(initDb, 5000);
+  }
+}
+initDb();
+
+function db() {
+  if (!dbModule) throw new Error("Database not connected yet — please try again in a moment");
+  return dbModule;
 }
 
-// ── Health check ─────────────────────────────────────
+// ── Health ────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
-    status: "ShopAgent server running",
+    status: "ShopAgent running",
     version: "2.0.0",
-    db: dbReady ? "connected" : "not connected",
+    db: dbReady ? "connected" : "connecting...",
     env: {
       DATABASE_URL: process.env.DATABASE_URL ? "set" : "missing",
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? "set" : "missing",
@@ -58,38 +60,36 @@ app.get("/", (req, res) => {
   });
 });
 
-// ── VAPI Tool Call Handler ────────────────────────────
+// ── VAPI Tools ────────────────────────────────────────
 app.post("/vapi/tools", async (req, res) => {
-  const body = req.body;
-  const message = body.message || body;
+  const message = req.body.message || req.body;
   const toolCalls = message.toolCallList || message.toolCalls || [];
   if (!toolCalls.length) return res.json({ results: [] });
 
-  const results = await Promise.all(
-    toolCalls.map(async (toolCall) => {
-      const { id, function: fn } = toolCall;
-      const name = fn ? fn.name : toolCall.name;
-      let args = {};
-      try {
-        args = typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments || {};
-      } catch (e) {}
-      console.log("[TOOL]", name, JSON.stringify(args).slice(0, 200));
-      let result;
-      try {
-        if (name === "search_products")    result = await searchProducts(args);
-        else if (name === "send_sms")      result = await sendProductSMS(args);
-        else if (name === "place_order")   result = await placeOrder(args);
-        else if (name === "track_package") result = await trackPackage(args);
-        else if (name === "get_balance")   result = await getBalance(args);
-        else if (name === "deduct_minutes") result = await deductMinutes(args);
-        else result = { error: "Unknown tool: " + name };
-      } catch (err) {
-        console.error("[ERROR]", name, err.message);
-        result = { error: err.message };
-      }
-      return { toolCallId: id || toolCall.id, result: JSON.stringify(result) };
-    })
-  );
+  const results = await Promise.all(toolCalls.map(async (tc) => {
+    const name = tc.function ? tc.function.name : tc.name;
+    let args = {};
+    try {
+      args = typeof tc.function.arguments === "string"
+        ? JSON.parse(tc.function.arguments)
+        : tc.function.arguments || {};
+    } catch(e) {}
+    console.log("[TOOL]", name, JSON.stringify(args).slice(0, 150));
+    let result;
+    try {
+      if (name === "search_products")    result = await searchProducts(args);
+      else if (name === "send_sms")      result = await sendProductSMS(args);
+      else if (name === "place_order")   result = await placeOrder(args);
+      else if (name === "track_package") result = await trackPackage(args);
+      else if (name === "get_balance")   result = await getBalance(args);
+      else if (name === "deduct_minutes") result = await deductMinutes(args);
+      else result = { error: "Unknown tool: " + name };
+    } catch(err) {
+      console.error("[TOOL ERROR]", name, err.message);
+      result = { error: err.message };
+    }
+    return { toolCallId: tc.id, result: JSON.stringify(result) };
+  }));
   res.json({ results });
 });
 
@@ -102,47 +102,41 @@ app.post("/vapi/webhook", async (req, res) => {
     const phone = message.call?.customer?.number;
     if (phone && mins > 0) {
       try {
-        const db = getDb();
-        await db.saveCall({
+        await db().saveCall({
           call_id: message.call?.id,
           customer_phone: phone,
           duration_seconds: message.call?.duration || 0,
           minutes_billed: mins,
           outcome: "completed",
         });
-      } catch (e) { console.error("[WEBHOOK] saveCall error:", e.message); }
+      } catch(e) { console.error("[WEBHOOK]", e.message); }
     }
   }
   res.sendStatus(200);
 });
 
-// ══════════════════════════════════════════════════════
-//  CUSTOMER PORTAL API
-// ══════════════════════════════════════════════════════
-
+// ── Customer API ──────────────────────────────────────
 app.get("/api/customer/:phone", async (req, res) => {
   try {
-    const db = getDb();
-    const customer = await db.getOrCreateCustomer(req.params.phone);
-    const orders = await db.getOrders(req.params.phone);
+    const customer = await db().getOrCreateCustomer(req.params.phone);
+    const orders = await db().getOrders(req.params.phone);
     res.json({ customer, orders });
-  } catch (err) {
-    console.error("[API] get customer error:", err.message);
-    res.status(503).json({ error: err.message, hint: "Database may still be connecting. Try again in a few seconds." });
+  } catch(err) {
+    res.status(503).json({ error: err.message });
   }
 });
 
 app.post("/api/customer/:phone/profile", async (req, res) => {
   try {
-    const db = getDb();
     const { name, email } = req.body;
-    await db.updateCustomer(req.params.phone, { name, email, status: "active" });
+    await db().updateCustomer(req.params.phone, { name, email, status: "active" });
     res.json({ success: true });
-  } catch (err) {
+  } catch(err) {
     res.status(503).json({ error: err.message });
   }
 });
 
+// ── Top up ────────────────────────────────────────────
 app.post("/api/topup/create-intent", async (req, res) => {
   try {
     const { phone, package_id } = req.body;
@@ -155,33 +149,30 @@ app.post("/api/topup/create-intent", async (req, res) => {
     const pkg = packages[package_id];
     if (!pkg) return res.status(400).json({ error: "Invalid package" });
 
-    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY.includes("xxx")) {
-      // Demo mode — add minutes directly
-      if (dbReady) {
-        const db = getDb();
-        await db.addBalance(phone, pkg.minutes);
-        await db.savePurchase(phone, pkg.minutes, pkg.price / 100, "demo_" + Date.now());
-      }
+    // Demo mode — no Stripe key
+    if (!process.env.STRIPE_SECRET_KEY) {
+      await db().addBalance(phone, pkg.minutes);
+      await db().savePurchase(phone, pkg.minutes, pkg.price / 100, "demo_" + Date.now());
       return res.json({ success: true, demo: true, minutes_added: pkg.minutes });
     }
 
+    // Real Stripe
     const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-    const db = getDb();
-    const customer = await db.getOrCreateCustomer(phone);
-    let stripeCustomerId = customer.stripe_customer_id;
-    if (!stripeCustomerId) {
-      const sc = await stripe.customers.create({ phone, metadata: { shopagent_phone: phone } });
-      stripeCustomerId = sc.id;
-      await db.updateCustomer(phone, { stripe_customer_id: stripeCustomerId });
+    const customer = await db().getOrCreateCustomer(phone);
+    let scId = customer.stripe_customer_id;
+    if (!scId) {
+      const sc = await stripe.customers.create({ phone, metadata: { phone } });
+      scId = sc.id;
+      await db().updateCustomer(phone, { stripe_customer_id: scId });
     }
     const intent = await stripe.paymentIntents.create({
-      amount: pkg.price, currency: "usd", customer: stripeCustomerId,
-      metadata: { phone, package_id, minutes: pkg.minutes },
+      amount: pkg.price, currency: "usd", customer: scId,
+      metadata: { phone, package_id, minutes: String(pkg.minutes) },
       description: "ShopAgent: " + pkg.label,
     });
     res.json({ client_secret: intent.client_secret, package: pkg });
-  } catch (err) {
-    console.error("[API] topup error:", err.message);
+  } catch(err) {
+    console.error("[TOPUP]", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -189,39 +180,29 @@ app.post("/api/topup/create-intent", async (req, res) => {
 app.post("/api/topup/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   try {
     const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-    const event = stripe.webhooks.constructEvent(req.body, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET);
+    const event = stripe.webhooks.constructEvent(
+      req.body, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET
+    );
     if (event.type === "payment_intent.succeeded") {
       const pi = event.data.object;
       const { phone, minutes } = pi.metadata;
-      if (phone && minutes && dbReady) {
-        const db = getDb();
-        await db.savePurchase(phone, parseInt(minutes), pi.amount / 100, pi.id);
-      }
+      if (phone && minutes) await db().savePurchase(phone, parseInt(minutes), pi.amount / 100, pi.id);
     }
     res.sendStatus(200);
-  } catch (err) {
+  } catch(err) {
     res.status(400).send("Webhook error: " + err.message);
   }
 });
 
+// ── Admin ─────────────────────────────────────────────
 app.get("/api/admin/customers", async (req, res) => {
-  try {
-    const db = getDb();
-    res.json(await db.getAllCustomers());
-  } catch (err) {
-    res.status(503).json({ error: err.message });
-  }
+  try { res.json(await db().getAllCustomers()); }
+  catch(err) { res.status(503).json({ error: err.message }); }
 });
 
 app.post("/api/admin/add-minutes", async (req, res) => {
   try {
-    const db = getDb();
-    const newBalance = await db.addBalance(req.body.phone, req.body.minutes);
+    const newBalance = await db().addBalance(req.body.phone, req.body.minutes);
     res.json({ success: true, new_balance: newBalance });
-  } catch (err) {
-    res.status(503).json({ error: err.message });
-  }
+  } catch(err) { res.status(503).json({ error: err.message }); }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("ShopAgent v2 running on port " + PORT));
