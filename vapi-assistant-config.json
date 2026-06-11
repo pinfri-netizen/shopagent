@@ -1,0 +1,142 @@
+{
+  "name": "ShopAgent",
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "temperature": 0.7,
+    "systemPrompt": "You are ShopAgent, an expert AI personal shopping assistant helping customers shop by phone.\n\nTHE FLOW — always follow this order:\n1. Greet customer and call get_balance with their phone number\n2. Ask what they want to buy\n3. Ask 1-2 clarifying questions (who is it for, size, use case)\n4. Ask sort preference: price low to high, best reviews, or best value\n5. Call search_products with the refined specific query\n6. Immediately call send_sms to text them the product photos\n7. Ask which option number they want\n8. Confirm product name and price out loud\n9. Call place_order once they verbally confirm\n10. Tell them confirmation SMS is on its way\n\nFILTER QUESTION EXAMPLES:\n- Trampoline: Is this for kids or adults? How big is your backyard?\n- Headphones: For music, calls, gaming, or all three? At home or on the go?\n- TV: Which room? How far will you sit? Do you game on it?\n- Vacuum: Mostly carpet or hard floors? Any pets at home?\n- Coffee maker: How many cups a day? Drip, espresso, or pods?\n\nRULES:\n- Always call get_balance at the start of every call\n- Always call send_sms right after search_products\n- Always confirm price and card before calling place_order\n- Warn when customer has 5 minutes or fewer left\n- Keep responses SHORT — this is a phone call\n- Never make up product details — only use what search returns",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_balance",
+          "description": "Check the customer's prepaid minute balance. Call at the start of every call.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "phone_number": { "type": "string", "description": "Customer phone number from the call" }
+            },
+            "required": ["phone_number"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "search_products",
+          "description": "Search Amazon for products. Only call after gathering use case, specs, and sort preference from customer.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query":     { "type": "string", "description": "Specific search query with all filters e.g. 14ft trampoline outdoor kids 250lb" },
+              "sort":      { "type": "string", "enum": ["price_low", "best_reviews", "best_value"] },
+              "max_price": { "type": "number", "description": "Max price if customer gave a budget" }
+            },
+            "required": ["query", "sort"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "send_sms",
+          "description": "Send product photos to customer phone via MMS. Always call immediately after search_products.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "to_number":    { "type": "string", "description": "Customer phone number" },
+              "message_text": { "type": "string", "description": "Intro message before the photos" },
+              "products": {
+                "type": "array",
+                "description": "Products array from search result",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "title":          { "type": "string" },
+                    "price":          { "type": "string" },
+                    "original_price": { "type": "string" },
+                    "rating":         { "type": "string" },
+                    "reviews":        { "type": "string" },
+                    "prime":          { "type": "boolean" },
+                    "image_url":      { "type": "string" },
+                    "url":            { "type": "string" }
+                  }
+                }
+              }
+            },
+            "required": ["to_number", "products"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "place_order",
+          "description": "Place the order and charge customer card. Only call after customer verbally confirms product and price.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "customer_phone":    { "type": "string" },
+              "product_title":     { "type": "string" },
+              "product_price":     { "type": "string" },
+              "product_url":       { "type": "string" },
+              "asin":              { "type": "string" },
+              "stripe_customer_id":{ "type": "string" }
+            },
+            "required": ["customer_phone", "product_title", "product_price"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "track_package",
+          "description": "Track a package and send SMS update to customer.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "tracking_number":  { "type": "string" },
+              "carrier":          { "type": "string" },
+              "customer_phone":   { "type": "string" }
+            },
+            "required": ["tracking_number"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "deduct_minutes",
+          "description": "Deduct minutes from customer balance. Call at end of call.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "phone_number": { "type": "string" },
+              "minutes":      { "type": "number" }
+            },
+            "required": ["phone_number", "minutes"]
+          }
+        },
+        "server": { "url": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/tools" }
+      }
+    ]
+  },
+  "voice": {
+    "provider": "11labs",
+    "voiceId": "sarah",
+    "stability": 0.5,
+    "similarityBoost": 0.75
+  },
+  "firstMessage": "Hey! Welcome to ShopAgent, your personal AI shopping assistant. I can search Amazon and other stores to find the best deals — I will ask a few quick questions first so I find you the perfect match, then send photos to your phone by text. What would you like to shop for today?",
+  "endCallMessage": "Thank you for shopping with ShopAgent! Your order details and tracking updates will arrive by text. Have a great day!",
+  "endCallPhrases": ["goodbye", "bye", "hang up", "end call", "that is all", "thanks bye"],
+  "maxDurationSeconds": 3600,
+  "silenceTimeoutSeconds": 30,
+  "responseDelaySeconds": 0.4,
+  "serverUrl": "https://YOUR_RAILWAY_URL.up.railway.app/vapi/webhook"
+}
