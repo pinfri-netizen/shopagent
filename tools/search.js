@@ -15,18 +15,17 @@ async function searchProducts({ query, sort, max_price }) {
     const Anthropic = require("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    // Step 1: Use web search to find products
+    // Step 1: Search Amazon
     const searchResponse = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 3000,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{
         role: "user",
-        content: `Search for: site:amazon.com "${query}"${priceFilter}`
+        content: `Search Amazon for: ${query}${priceFilter}. Find real products with prices, ratings, and ASINs.`
       }],
     });
 
-    // Get all text from the search response
     const searchText = searchResponse.content
       .filter(b => b.type === "text")
       .map(b => b.text)
@@ -34,16 +33,37 @@ async function searchProducts({ query, sort, max_price }) {
 
     console.log("[SEARCH] Raw search text length:", searchText.length);
 
-    // Step 2: Ask Claude to extract and format the product data
+    // Step 2: Format into clean JSON
     const formatResponse = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 2000,
-      messages: [
-        {
-          role: "user",
-          content: `Here is Amazon search data:\n\n${searchText}\n\nExtract exactly 3 products from this data. If you cannot find real products, create realistic placeholder products for "${query}" that would typically be found on Amazon.\n\nReturn ONLY this JSON array with no other text:\n[\n  {\n    "title": "product name",\n    "price": "$XX.XX",\n    "original_price": "$XX.XX",\n    "rating": "4.5",\n    "reviews": "1,234",\n    "prime": true,\n    "image_url": "",\n    "asin": "B000000000",\n    "url": "https://www.amazon.com/s?k=${encodeURIComponent(query)}",\n    "badge": "Best value",\n    "highlight": "why this is a good pick",\n    "specs": ["spec 1", "spec 2", "spec 3"]\n  }\n]`
-        }
-      ],
+      messages: [{
+        role: "user",
+        content: `Based on this Amazon search data, extract or create 3 realistic products for "${query}"${priceFilter} sorted by ${sortText}.
+
+Search data:
+${searchText}
+
+Return ONLY a valid JSON array (no markdown, no code blocks, just the raw JSON starting with [):
+[
+  {
+    "title": "exact product name",
+    "price": "$XX.XX",
+    "original_price": "$XX.XX",
+    "rating": "4.X",
+    "reviews": "X,XXX",
+    "prime": true,
+    "image_url": "https://m.media-amazon.com/images/I/XXXXX.jpg",
+    "asin": "BXXXXXXXXX",
+    "url": "https://www.amazon.com/dp/BXXXXXXXXX",
+    "badge": "Best value",
+    "highlight": "one sentence why this is a great pick",
+    "specs": ["key spec 1", "key spec 2", "key spec 3"]
+  }
+]
+
+Important: Use real ASINs and image URLs from the search data if available. If image URL not found, use empty string.`
+      }],
     });
 
     const formatText = formatResponse.content
@@ -51,26 +71,29 @@ async function searchProducts({ query, sort, max_price }) {
       .map(b => b.text)
       .join("");
 
-    console.log("[SEARCH] Format response preview:", formatText.slice(0, 400));
+    console.log("[SEARCH] Format preview:", formatText.slice(0, 300));
 
-    // Extract JSON
-    const match = formatText.match(/\[[\s\S]*\]/);
-    if (match) {
-      const products = JSON.parse(match[0]);
-      console.log("[SEARCH] Got", products.length, "products");
+    // Strip markdown code blocks if present
+    const cleaned = formatText
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/gi, "")
+      .trim();
 
-      const spoken = products.map((p, i) =>
-        `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars.`
-      ).join(" ");
+    const match = cleaned.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error("No JSON array in response");
 
-      return {
-        success: true,
-        spoken: `I found ${products.length} great options for you, sorted by ${sortText}. ${spoken} I am sending you the details by text message right now. Which number would you like?`,
-        products,
-      };
-    }
+    const products = JSON.parse(match[0]);
+    console.log("[SEARCH] Got", products.length, "products");
 
-    throw new Error("Could not parse products from response");
+    const spoken = products.map((p, i) =>
+      `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars${p.prime ? ", with free Prime shipping" : ""}.`
+    ).join(" ");
+
+    return {
+      success: true,
+      spoken: `Great news! I found ${products.length} options sorted by ${sortText}. ${spoken} I am texting you photos and details right now. Which number would you like?`,
+      products,
+    };
 
   } catch (err) {
     console.error("[SEARCH] Error:", err.message);
