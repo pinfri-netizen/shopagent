@@ -15,15 +15,13 @@ const { placeOrder } = require("./tools/order");
 const { trackPackage } = require("./tools/tracking");
 const { getBalance, deductMinutes } = require("./tools/billing");
 
-console.log("[ENV] DATABASE_URL:", process.env.DATABASE_URL ? "SET (" + process.env.DATABASE_URL.slice(0,30) + "...)" : "NOT SET");
+console.log("[ENV] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
 console.log("[ENV] ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "SET" : "NOT SET");
 console.log("[ENV] TWILIO_ACCOUNT_SID:", process.env.TWILIO_ACCOUNT_SID ? "SET" : "NOT SET");
 
-// Start server immediately — DB connects in background
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("ShopAgent v2 running on port " + PORT));
 
-// Init DB in background after server is already listening
 let dbReady = false;
 let dbModule = null;
 
@@ -35,68 +33,108 @@ async function initDb() {
     console.log("[DB] Ready");
   } catch (err) {
     console.error("[DB] Init error:", err.message);
-    // Retry after 5 seconds
     setTimeout(initDb, 5000);
   }
 }
 initDb();
 
 function db() {
-  if (!dbModule) throw new Error("Database not connected yet — please try again in a moment");
+  if (!dbModule) throw new Error("Database not connected yet");
   return dbModule;
 }
 
-// ── Health ────────────────────────────────────────────
 app.get("/", (req, res) => {
-  res.json({
-    status: "ShopAgent running",
-    version: "2.0.0",
-    db: dbReady ? "connected" : "connecting...",
-    env: {
-      DATABASE_URL: process.env.DATABASE_URL ? "set" : "missing",
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? "set" : "missing",
-      TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID ? "set" : "missing",
-    }
-  });
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ── VAPI Tools ────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", version: "2.0.0", db: dbReady ? "connected" : "connecting" });
+});
+
+// ── VAPI Tools — handle ALL possible VAPI request formats ──
 app.post("/vapi/tools", async (req, res) => {
-  const message = req.body.message || req.body;
-  const toolCalls = message.toolCallList || message.toolCalls || [];
-  if (!toolCalls.length) return res.json({ results: [] });
+  console.log("[VAPI] Incoming request body:", JSON.stringify(req.body).slice(0, 500));
+
+  const body = req.body || {};
+
+  // VAPI can send tool calls in multiple formats — handle all of them
+  let toolCalls = [];
+
+  // Format 1: body.message.toolCallList
+  if (body.message && body.message.toolCallList) {
+    toolCalls = body.message.toolCallList;
+  }
+  // Format 2: body.message.toolCalls
+  else if (body.message && body.message.toolCalls) {
+    toolCalls = body.message.toolCalls;
+  }
+  // Format 3: body.toolCallList
+  else if (body.toolCallList) {
+    toolCalls = body.toolCallList;
+  }
+  // Format 4: body.toolCalls
+  else if (body.toolCalls) {
+    toolCalls = body.toolCalls;
+  }
+  // Format 5: single tool call at root level
+  else if (body.name || (body.function && body.function.name)) {
+    toolCalls = [body];
+  }
+
+  console.log("[VAPI] Tool calls found:", toolCalls.length);
+
+  if (!toolCalls.length) {
+    console.log("[VAPI] No tool calls — returning empty results");
+    return res.json({ results: [] });
+  }
 
   const results = await Promise.all(toolCalls.map(async (tc) => {
-    const name = tc.function ? tc.function.name : tc.name;
+    // Handle different tool call structures
+    let name = "";
     let args = {};
-    try {
-      args = typeof tc.function.arguments === "string"
-        ? JSON.parse(tc.function.arguments)
-        : tc.function.arguments || {};
-    } catch(e) {}
-    console.log("[TOOL]", name, JSON.stringify(args).slice(0, 150));
+    let id = tc.id || tc.toolCallId || "unknown";
+
+    if (tc.function) {
+      name = tc.function.name || "";
+      try {
+        args = typeof tc.function.arguments === "string"
+          ? JSON.parse(tc.function.arguments)
+          : tc.function.arguments || {};
+      } catch(e) { args = {}; }
+    } else if (tc.name) {
+      name = tc.name;
+      args = tc.arguments || tc.parameters || {};
+    }
+
+    console.log("[TOOL CALL] name:", name, "args:", JSON.stringify(args).slice(0, 200));
+
     let result;
     try {
-      if (name === "search_products")    result = await searchProducts(args);
-      else if (name === "send_sms")      result = await sendProductSMS(args);
-      else if (name === "place_order")   result = await placeOrder(args);
-      else if (name === "track_package") result = await trackPackage(args);
-      else if (name === "get_balance")   result = await getBalance(args);
+      if (name === "search_products")     result = await searchProducts(args);
+      else if (name === "send_sms")       result = await sendProductSMS(args);
+      else if (name === "place_order")    result = await placeOrder(args);
+      else if (name === "track_package")  result = await trackPackage(args);
+      else if (name === "get_balance")    result = await getBalance(args);
       else if (name === "deduct_minutes") result = await deductMinutes(args);
       else result = { error: "Unknown tool: " + name };
     } catch(err) {
       console.error("[TOOL ERROR]", name, err.message);
       result = { error: err.message };
     }
-    return { toolCallId: tc.id, result: JSON.stringify(result) };
+
+    console.log("[TOOL RESULT]", name, JSON.stringify(result).slice(0, 200));
+    return { toolCallId: id, result: JSON.stringify(result) };
   }));
+
+  console.log("[VAPI] Sending results:", JSON.stringify(results).slice(0, 300));
   res.json({ results });
 });
 
 // ── VAPI Webhook ──────────────────────────────────────
 app.post("/vapi/webhook", async (req, res) => {
-  const { message } = req.body;
+  const { message } = req.body || {};
   if (!message) return res.sendStatus(200);
+  console.log("[WEBHOOK]", message.type);
   if (message.type === "call-ended" && dbReady) {
     const mins = Math.ceil((message.call?.duration || 0) / 60);
     const phone = message.call?.customer?.number;
@@ -136,7 +174,6 @@ app.post("/api/customer/:phone/profile", async (req, res) => {
   }
 });
 
-// ── Top up ────────────────────────────────────────────
 app.post("/api/topup/create-intent", async (req, res) => {
   try {
     const { phone, package_id } = req.body;
@@ -149,14 +186,12 @@ app.post("/api/topup/create-intent", async (req, res) => {
     const pkg = packages[package_id];
     if (!pkg) return res.status(400).json({ error: "Invalid package" });
 
-    // Demo mode — no Stripe key
     if (!process.env.STRIPE_SECRET_KEY) {
       await db().addBalance(phone, pkg.minutes);
       await db().savePurchase(phone, pkg.minutes, pkg.price / 100, "demo_" + Date.now());
       return res.json({ success: true, demo: true, minutes_added: pkg.minutes });
     }
 
-    // Real Stripe
     const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
     const customer = await db().getOrCreateCustomer(phone);
     let scId = customer.stripe_customer_id;
@@ -194,7 +229,6 @@ app.post("/api/topup/webhook", express.raw({ type: "application/json" }), async 
   }
 });
 
-// ── Admin ─────────────────────────────────────────────
 app.get("/api/admin/customers", async (req, res) => {
   try { res.json(await db().getAllCustomers()); }
   catch(err) { res.status(503).json({ error: err.message }); }
