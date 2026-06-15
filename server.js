@@ -240,3 +240,27 @@ app.post("/api/admin/add-minutes", async (req, res) => {
     res.json({ success: true, new_balance: newBalance });
   } catch(err) { res.status(503).json({ error: err.message }); }
 });
+
+// ── Test search endpoint ──────────────────────────────
+app.get("/api/test-search", async (req, res) => {
+  try {
+    const result = await searchProducts({ query: "drone for kids", sort: "best_value" });
+    res.json({ success: true, result });
+  } catch(err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Health ────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    version: "2.0.0",
+    db: dbReady ? "connected" : "connecting",
+    env: {
+      DATABASE_URL: process.env.DATABASE_URL ? "set" : "missing",
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? "set" : "missing",
+      TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID ? "set" : "missing",
+    }
+  });
+});
