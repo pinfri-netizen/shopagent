@@ -2,88 +2,90 @@ require("dotenv").config();
 
 async function searchProducts({ query, sort, max_price }) {
   const sortText = {
-    price_low:    "Sort results by price lowest to highest.",
-    best_reviews: "Sort results by highest customer ratings first.",
-    best_value:   "Prioritize the best balance of price and rating.",
-  }[sort] || "Sort by best value.";
+    price_low:    "lowest price first",
+    best_reviews: "highest rated first",
+    best_value:   "best value for money",
+  }[sort] || "best value";
 
-  const priceText = max_price ? "Only include products under $" + max_price + "." : "";
+  const priceFilter = max_price ? ` under $${max_price}` : "";
 
-  const prompt = `Search Amazon for: "${query}"
-${priceText}
-${sortText}
-Return exactly 3 real Amazon products as a JSON array. Each item must have:
-- title: full product name
-- price: current price as string e.g. "$49.99"
-- original_price: original price if on sale
-- rating: star rating e.g. "4.7"
-- reviews: review count e.g. "8,420"
-- prime: true or false
-- image_url: Amazon image URL starting with https://m.media-amazon.com/
-- asin: Amazon product ID
-- url: https://www.amazon.com/dp/[ASIN]
-- badge: one of "Best value" | "Top rated" | "Lowest price" | "Best seller"
-- highlight: one sentence why this matches the search
-- specs: array of 3 key specs
-Return ONLY a valid JSON array. No markdown, no explanation, no code blocks.`;
-
-  console.log("[SEARCH] Starting search for:", query);
-  console.log("[SEARCH] ANTHROPIC_API_KEY present:", !!process.env.ANTHROPIC_API_KEY);
-  console.log("[SEARCH] Key prefix:", process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice(0, 15) + "..." : "MISSING");
+  console.log("[SEARCH] Searching for:", query);
 
   try {
     const Anthropic = require("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    console.log("[SEARCH] Calling Anthropic API...");
-
     const response = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 2000,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
-      messages: [{ role: "user", content: prompt }],
+      messages: [{
+        role: "user",
+        content: `Search Amazon for "${query}"${priceFilter} sorted by ${sortText}.
+
+Find 3 real products currently available on Amazon. For each product return:
+- title
+- price (e.g. "$29.99")
+- rating (e.g. "4.5")
+- reviews (e.g. "2,341")
+- prime (true/false)
+- image_url (from m.media-amazon.com)
+- asin
+- url (https://www.amazon.com/dp/ASIN)
+- highlight (why it matches)
+- specs (3 bullet points)
+- badge ("Best value", "Top rated", or "Lowest price")
+
+Respond with ONLY a JSON array, starting with [ and ending with ]. No other text.`
+      }],
     });
 
-    console.log("[SEARCH] API response received, stop_reason:", response.stop_reason);
+    console.log("[SEARCH] Stop reason:", response.stop_reason);
 
     const text = response.content
       .filter(b => b.type === "text")
       .map(b => b.text)
       .join("");
 
-    console.log("[SEARCH] Text response length:", text.length);
-    console.log("[SEARCH] Text preview:", text.slice(0, 200));
+    console.log("[SEARCH] Response preview:", text.slice(0, 300));
 
+    // Try to extract JSON array
     const match = text.match(/\[[\s\S]*\]/);
-    if (!match) {
-      console.error("[SEARCH] No JSON array found in response");
-      return {
-        success: false,
-        spoken: "I found some results but had trouble formatting them. Let me try again.",
-        products: [],
-      };
+    if (match) {
+      try {
+        const products = JSON.parse(match[0]);
+        if (products && products.length > 0) {
+          console.log("[SEARCH] Found", products.length, "products");
+          const spoken = products.map((p, i) =>
+            `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars.`
+          ).join(" ");
+          return {
+            success: true,
+            spoken: `I found ${products.length} great options. ${spoken} I am sending you photos by text right now. Which number would you like?`,
+            products,
+          };
+        }
+      } catch(e) {
+        console.error("[SEARCH] JSON parse error:", e.message);
+      }
     }
 
-    const products = JSON.parse(match[0]);
-    console.log("[SEARCH] Found", products.length, "products");
+    // Fallback — build results from web search content blocks
+    const searchResults = response.content.filter(b => b.type === "tool_result" || b.type === "web_search_tool_result");
+    console.log("[SEARCH] Search result blocks:", searchResults.length);
 
-    const spokenSummary = products.map((p, i) =>
-      "Option " + (i + 1) + ": " + p.title + " for " + p.price + ", rated " + p.rating + " stars."
-    ).join(" ");
-
-    return {
-      success: true,
-      spoken: "I found " + products.length + " great options. " + spokenSummary + " I am sending you photos of all three by text message right now. Which one would you like?",
-      products,
-    };
-  } catch (err) {
-    console.error("[SEARCH] Error type:", err.constructor.name);
-    console.error("[SEARCH] Error message:", err.message);
-    console.error("[SEARCH] Error status:", err.status);
-    console.error("[SEARCH] Full error:", JSON.stringify(err, Object.getOwnPropertyNames(err)).slice(0, 500));
+    // If no JSON, return a helpful spoken response with whatever we found
     return {
       success: false,
-      spoken: "I had trouble searching right now. Could you repeat what you are looking for?",
+      spoken: "I found some results but had trouble formatting them. Let me try a different search. Could you give me a bit more detail about what you are looking for?",
+      products: [],
+    };
+
+  } catch (err) {
+    console.error("[SEARCH] Error:", err.message);
+    return {
+      success: false,
+      spoken: "I had trouble searching right now. Please try again in a moment.",
       products: [],
     };
   }
