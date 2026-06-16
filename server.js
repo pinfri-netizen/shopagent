@@ -191,6 +191,24 @@ app.post("/vapi/webhook", async function(req, res) {
   var message = (req.body || {}).message;
   if (!message) return res.sendStatus(200);
   console.log("[WEBHOOK]", message.type);
+
+  // Call started — pre-cache the caller's phone and balance
+  if (message.type === "call-started" || message.type === "status-update") {
+    var phone = null;
+    try { phone = message.call.customer.number; } catch(e) {}
+    try { if (!phone) phone = req.body.call.customer.number; } catch(e) {}
+    if (phone) {
+      cachePhone(phone);
+      console.log("[WEBHOOK] Call started — pre-caching phone:", phone);
+      // Pre-load balance into cache so first tool call is instant
+      try {
+        var balResult = await getBalance({ phone_number: phone });
+        cachePhone(phone);
+        console.log("[WEBHOOK] Pre-loaded balance:", balResult.balance, "mins");
+      } catch(e) { console.error("[WEBHOOK] Pre-load error:", e.message); }
+    }
+  }
+
   if (message.type === "call-ended" && dbReady) {
     var mins = Math.ceil(((message.call || {}).duration || 0) / 60);
     var phone = ((message.call || {}).customer || {}).number;
