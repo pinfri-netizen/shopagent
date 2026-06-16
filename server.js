@@ -25,6 +25,31 @@ app.listen(PORT, () => console.log("ShopAgent v2 running on port " + PORT));
 let dbReady = false;
 let dbModule = null;
 
+// Session cache — stores phone number and last search results per active call
+// Keyed by 60-second time window so concurrent calls don't interfere
+const callSessions = {};
+function sessionKey() { return Math.floor(Date.now() / 60000); }
+function cachePhone(phone) {
+  const k = sessionKey();
+  callSessions[k] = callSessions[k] || {};
+  callSessions[k].phone = phone;
+  // Clean old sessions
+  Object.keys(callSessions).forEach(old => { if (old < k - 5) delete callSessions[old]; });
+}
+function cacheProducts(products) {
+  const k = sessionKey();
+  callSessions[k] = callSessions[k] || {};
+  callSessions[k].products = products;
+}
+function getCachedPhone() {
+  const k = sessionKey();
+  return (callSessions[k] || callSessions[k-1] || {}).phone;
+}
+function getCachedProducts() {
+  const k = sessionKey();
+  return (callSessions[k] || callSessions[k-1] || {}).products;
+}
+
 async function initDb() {
   try {
     dbModule = require("./db");
