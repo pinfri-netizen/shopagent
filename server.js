@@ -14,7 +14,17 @@ const { sendProductSMS } = require("./tools/sms");
 const { placeOrder } = require("./tools/order");
 const { trackPackage } = require("./tools/tracking");
 const { getBalance, deductMinutes } = require("./tools/billing");
-const { topupByPhone } = require("./tools/topup");
+let topupByPhone;
+try {
+  topupByPhone = require("./tools/topup").topupByPhone;
+} catch(e) {
+  try {
+    topupByPhone = require("./topup").topupByPhone;
+  } catch(e2) {
+    console.warn("[WARN] topup.js not found — topup disabled");
+    topupByPhone = async () => ({ success: false, spoken: "Top up is not available right now." });
+  }
+}
 
 console.log("[ENV] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
 console.log("[ENV] ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "SET" : "NOT SET");
@@ -136,10 +146,15 @@ app.post("/vapi/tools", async function(req, res) {
     var result;
     try {
       if (name === "get_balance") {
-        // Use caller phone from cache if VAPI didn't pass it in args
-        if (!args.phone_number && callerPhone) {
-          args.phone_number = callerPhone;
-          console.log("[BALANCE] Using cached caller phone:", callerPhone);
+        // Always use caller phone from VAPI if available — override what agent passes
+        if (callerPhone) {
+          const callerDigits = callerPhone.replace(/[^0-9]/g, "");
+          const argDigits = (args.phone_number || "").replace(/[^0-9]/g, "");
+          // Use caller ID if agent didn't pass anything, or if they match last digits
+          if (!args.phone_number || argDigits.slice(-7) === callerDigits.slice(-7)) {
+            args.phone_number = callerPhone;
+            console.log("[BALANCE] Using caller ID:", callerPhone);
+          }
         }
         result = await getBalance(args);
         if (args.phone_number) cachePhone(args.phone_number);
