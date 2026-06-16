@@ -1,7 +1,7 @@
 require("dotenv").config();
 
 async function searchProducts({ query, sort, max_price }) {
-  console.log("[SEARCH] Searching for:", query, "sort:", sort);
+  console.log("[SEARCH] Searching for:", query);
 
   const sortText = {
     price_low:    "lowest price",
@@ -15,91 +15,61 @@ async function searchProducts({ query, sort, max_price }) {
     const Anthropic = require("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    // Step 1: Search Amazon
-    const searchResponse = await client.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 3000,
+    // ONE call only — search + format in a single request
+    // Use tool_choice to force exactly one web search then stop
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
+      tool_choice: { type: "auto" },
+      system: `You are a product search assistant. When given a search query, search Amazon once and return ONLY a JSON array of 3 products. No explanation, no markdown, just the raw JSON array starting with [ and ending with ].
+
+Each product must have: title, price (e.g. "$29.99"), rating (e.g. "4.5"), reviews (e.g. "1,234"), prime (true/false), image_url (from m.media-amazon.com or empty string), asin, url (https://www.amazon.com/dp/ASIN), badge ("Best value"/"Top rated"/"Lowest price"), highlight (one sentence), specs (array of 3 strings).
+
+After searching ONCE, immediately return the JSON array. Do not search multiple times.`,
       messages: [{
         role: "user",
-        content: `Search Amazon for: ${query}${priceFilter}. Find real products with prices, ratings, and ASINs.`
+        content: `Find 3 Amazon products for: ${query}${priceFilter}, sorted by ${sortText}. Return only the JSON array.`
       }],
     });
 
-    const searchText = searchResponse.content
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
+    console.log("[SEARCH] Stop reason:", response.stop_reason);
+    console.log("[SEARCH] Content blocks:", response.content.length);
 
-    console.log("[SEARCH] Raw search text length:", searchText.length);
-
-    // Step 2: Format into clean JSON
-    const formatResponse = await client.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 2000,
-      messages: [{
-        role: "user",
-        content: `Based on this Amazon search data, extract or create 3 realistic products for "${query}"${priceFilter} sorted by ${sortText}.
-
-Search data:
-${searchText}
-
-Return ONLY a valid JSON array (no markdown, no code blocks, just the raw JSON starting with [):
-[
-  {
-    "title": "exact product name",
-    "price": "$XX.XX",
-    "original_price": "$XX.XX",
-    "rating": "4.X",
-    "reviews": "X,XXX",
-    "prime": true,
-    "image_url": "https://m.media-amazon.com/images/I/XXXXX.jpg",
-    "asin": "BXXXXXXXXX",
-    "url": "https://www.amazon.com/dp/BXXXXXXXXX",
-    "badge": "Best value",
-    "highlight": "one sentence why this is a great pick",
-    "specs": ["key spec 1", "key spec 2", "key spec 3"]
-  }
-]
-
-Important: Use real ASINs and image URLs from the search data if available. If image URL not found, use empty string.`
-      }],
-    });
-
-    const formatText = formatResponse.content
+    // Get the text response
+    const text = response.content
       .filter(b => b.type === "text")
       .map(b => b.text)
       .join("");
 
-    console.log("[SEARCH] Format preview:", formatText.slice(0, 300));
+    console.log("[SEARCH] Response preview:", text.slice(0, 300));
 
-    // Strip markdown code blocks if present
-    const cleaned = formatText
-      .replace(/```json\s*/gi, "")
-      .replace(/```\s*/gi, "")
-      .trim();
-
+    // Clean and parse JSON
+    const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
     const match = cleaned.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("No JSON array in response");
 
-    const products = JSON.parse(match[0]);
-    console.log("[SEARCH] Got", products.length, "products");
+    if (match) {
+      const products = JSON.parse(match[0]);
+      console.log("[SEARCH] Got", products.length, "products");
 
-    const spoken = products.map((p, i) =>
-      `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars${p.prime ? ", with free Prime shipping" : ""}.`
-    ).join(" ");
+      const spoken = products.map((p, i) =>
+        `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars${p.prime ? " with free Prime shipping" : ""}.`
+      ).join(" ");
 
-    return {
-      success: true,
-      spoken: `Great news! I found ${products.length} options sorted by ${sortText}. ${spoken} I am texting you photos and details right now. Which number would you like?`,
-      products,
-    };
+      return {
+        success: true,
+        spoken: `I found ${products.length} great options sorted by ${sortText}. ${spoken} I am sending you photos by text right now. Which number would you like?`,
+        products,
+      };
+    }
+
+    throw new Error("No JSON array in response");
 
   } catch (err) {
     console.error("[SEARCH] Error:", err.message);
     return {
       success: false,
-      spoken: "I had trouble with that search. Could you describe what you are looking for in a different way?",
+      spoken: "I had trouble searching. Could you describe what you are looking for again?",
       products: [],
     };
   }
