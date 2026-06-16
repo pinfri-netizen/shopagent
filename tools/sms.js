@@ -23,30 +23,43 @@ async function sendProductSMS({ to_number, products, message_text }) {
     const { Pingram } = require("pingram");
     const pingram = new Pingram({ apiKey });
 
-    console.log("[SMS] Sending to:", toNumber);
+    console.log("[SMS] Sending to:", toNumber, "Products:", (products || []).length);
 
     // Send intro message
     await pingram.send({
       type: "shopagent_sms",
       to: { number: toNumber },
-      sms: { message: message_text || "Here are your ShopAgent results! Tell me the option number to order:" }
+      sms: {
+        message: message_text || "Here are your ShopAgent results! Reply with the option number to order:"
+      }
     });
 
-    // Send each product
+    // Send each product with image if available
     for (let i = 0; i < (products || []).length; i++) {
       const p = products[i];
+
       const msg = [
         `Option ${i + 1}: ${p.title}`,
         `Price: ${p.price}${p.original_price && p.original_price !== p.price ? ` (was ${p.original_price})` : ""}`,
         `${p.rating} stars · ${p.reviews} reviews`,
-        p.prime ? "FREE Prime shipping" : "",
-        p.url ? `Link: ${p.url}` : "",
+        p.prime ? "✅ FREE Prime shipping" : "",
+        p.url ? p.url : "",
       ].filter(Boolean).join("\n");
+
+      const smsPayload = { message: msg };
+
+      // Add image if we have a valid URL
+      if (p.image_url && p.image_url.startsWith("https://")) {
+        smsPayload.mediaUrls = [p.image_url];
+        console.log("[SMS] Sending MMS with image for option", i + 1);
+      } else {
+        console.log("[SMS] No image for option", i + 1, "— sending text only");
+      }
 
       await pingram.send({
         type: "shopagent_sms",
         to: { number: toNumber },
-        sms: { message: msg }
+        sms: smsPayload
       });
     }
 
@@ -54,14 +67,16 @@ async function sendProductSMS({ to_number, products, message_text }) {
     await pingram.send({
       type: "shopagent_sms",
       to: { number: toNumber },
-      sms: { message: "Still on the call? Say option 1, 2, or 3 and I will place your order right away!" }
+      sms: {
+        message: "Still on the call? Say option 1, 2, or 3 and I will place your order right away!"
+      }
     });
 
     console.log("[SMS] Successfully sent", (products || []).length, "messages to", toNumber);
 
     return {
       success: true,
-      spoken: "I just sent you " + (products ? products.length : 0) + " product options by text. Take a look and tell me which number you want.",
+      spoken: "I just sent you " + (products ? products.length : 0) + " product options by text message. Take a look and tell me which number you want.",
     };
 
   } catch (err) {
@@ -70,7 +85,6 @@ async function sendProductSMS({ to_number, products, message_text }) {
       success: false,
       spoken: "I had trouble sending the texts but you can still pick by number. " +
         (products || []).map((p, i) => "Option " + (i+1) + ": " + p.title + " for " + p.price + ".").join(" "),
-      error: err.message,
     };
   }
 }
