@@ -5,63 +5,67 @@ async function sendProductSMS({ to_number, products, message_text }) {
     return { success: false, spoken: "I do not have your phone number to send pictures to." };
   }
 
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const FROM = process.env.TWILIO_FROM_NUMBER;
-
-  if (!sid || !sid.startsWith("AC") || !token || !FROM) {
-    console.warn("Twilio not configured — skipping SMS");
+  const apiKey = process.env.PINGRAM_API_KEY;
+  if (!apiKey) {
+    console.warn("[SMS] PINGRAM_API_KEY not set — skipping SMS");
     return {
       success: true,
-      spoken: "I found your products. I am describing them now since text messaging is not yet configured. " +
+      spoken: "I found your products. " +
         (products || []).map((p, i) => "Option " + (i+1) + ": " + p.title + " for " + p.price + ".").join(" ") +
         " Which number would you like?",
     };
   }
 
-  const twilio = require("twilio");
-  const client = twilio(sid, token);
-
   const digits = to_number.replace(/\D/g, "");
   const toNumber = digits.startsWith("1") ? "+" + digits : "+1" + digits;
 
   try {
-    await client.messages.create({
-      body: message_text || "Here are your ShopAgent results! Pick the one you want:",
-      from: FROM,
-      to: toNumber,
+    const { Pingram } = require("pingram");
+    const pingram = new Pingram({ apiKey });
+
+    // Send intro message
+    await pingram.send({
+      type: "shopagent_sms",
+      to: { number: toNumber },
+      sms: {
+        message: message_text || "Here are your ShopAgent results! Reply with the option number to order:"
+      }
     });
 
+    // Send each product as a separate SMS
     for (let i = 0; i < (products || []).length; i++) {
       const p = products[i];
-      const body = [
-        "Option " + (i + 1) + ": " + p.title,
-        p.price + (p.original_price && p.original_price !== p.price ? " (was " + p.original_price + ")" : ""),
-        p.rating + " stars - " + p.reviews + " reviews",
+      const msg = [
+        `Option ${i + 1}: ${p.title}`,
+        `${p.price}${p.original_price && p.original_price !== p.price ? ` (was ${p.original_price})` : ""}`,
+        `${p.rating} stars · ${p.reviews} reviews`,
         p.prime ? "FREE Prime shipping" : "",
         p.url || "",
-        "Reply with " + (i + 1) + " to order",
       ].filter(Boolean).join("\n");
 
-      const opts = { body, from: FROM, to: toNumber };
-      if (p.image_url && p.image_url.startsWith("https://")) {
-        opts.mediaUrl = [p.image_url];
-      }
-      await client.messages.create(opts);
+      await pingram.send({
+        type: "shopagent_sms",
+        to: { number: toNumber },
+        sms: { message: msg }
+      });
     }
 
-    await client.messages.create({
-      body: "Still on the call? Just say the option number (1, 2, or 3) and I will place your order!",
-      from: FROM,
-      to: toNumber,
+    // Send final prompt
+    await pingram.send({
+      type: "shopagent_sms",
+      to: { number: toNumber },
+      sms: { message: "Still on the call? Just say option 1, 2, or 3 and I will place your order!" }
     });
+
+    console.log("[SMS] Sent", (products || []).length, "product messages to", toNumber);
 
     return {
       success: true,
-      spoken: "I just sent you " + (products ? products.length : 0) + " product photos by text message. Take a look and tell me which number you want.",
+      spoken: "I just sent you " + (products ? products.length : 0) + " product options by text message. Take a look and tell me which number you want.",
     };
+
   } catch (err) {
-    console.error("SMS error:", err.message);
+    console.error("[SMS] Pingram error:", err.message);
     return {
       success: false,
       spoken: "I had trouble sending the text messages but you can still pick an option by number.",
