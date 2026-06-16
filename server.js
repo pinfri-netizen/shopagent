@@ -14,6 +14,7 @@ const { sendProductSMS } = require("./tools/sms");
 const { placeOrder } = require("./tools/order");
 const { trackPackage } = require("./tools/tracking");
 const { getBalance, deductMinutes } = require("./tools/billing");
+const { topupByPhone } = require("./tools/topup");
 
 console.log("[ENV] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
 console.log("[ENV] ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "SET" : "NOT SET");
@@ -91,7 +92,23 @@ app.get("/api/test-search", async function(req, res) {
 
 // VAPI Tools
 app.post("/vapi/tools", async function(req, res) {
-  console.log("[VAPI] Incoming request body:", JSON.stringify(req.body).slice(0, 300));
+  // Log full structure to find caller ID location
+  const bodyStr = JSON.stringify(req.body);
+  console.log("[VAPI] Incoming request body:", bodyStr.slice(0, 300));
+  
+  // Try to find caller phone in multiple VAPI locations
+  var callerPhone = null;
+  try { callerPhone = req.body.message.call.customer.number; } catch(e) {}
+  try { if (!callerPhone) callerPhone = req.body.message.artifact.messages[0].call?.customer?.number; } catch(e) {}
+  try { if (!callerPhone) callerPhone = req.body.call?.customer?.number; } catch(e) {}
+  try { if (!callerPhone) callerPhone = req.body.customer?.number; } catch(e) {}
+  
+  if (callerPhone) {
+    console.log("[VAPI] Found caller phone:", callerPhone);
+    cachePhone(callerPhone);
+  } else {
+    console.log("[VAPI] No caller phone in message — will use spoken number");
+  }
 
   var body = req.body || {};
   var toolCalls = [];
@@ -119,16 +136,10 @@ app.post("/vapi/tools", async function(req, res) {
     var result;
     try {
       if (name === "get_balance") {
-        // Auto-detect caller phone from VAPI message if not passed in args
-        if (!args.phone_number) {
-          var callerNum = null;
-          try {
-            callerNum = body.message.call.customer.number || null;
-          } catch(e) {}
-          if (callerNum) {
-            args.phone_number = callerNum;
-            console.log("[VAPI] Auto caller ID:", callerNum);
-          }
+        // Use caller phone from cache if VAPI didn't pass it in args
+        if (!args.phone_number && callerPhone) {
+          args.phone_number = callerPhone;
+          console.log("[BALANCE] Using cached caller phone:", callerPhone);
         }
         result = await getBalance(args);
         if (args.phone_number) cachePhone(args.phone_number);
@@ -146,6 +157,7 @@ app.post("/vapi/tools", async function(req, res) {
       else if (name === "place_order")    result = await placeOrder(args);
       else if (name === "track_package")  result = await trackPackage(args);
       else if (name === "deduct_minutes") result = await deductMinutes(args);
+      else if (name === "topup_by_phone") result = await topupByPhone(args);
       else result = { error: "Unknown tool: " + name };
     } catch(err) {
       console.error("[TOOL ERROR]", name, err.message);
