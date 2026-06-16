@@ -119,8 +119,20 @@ app.post("/vapi/tools", async function(req, res) {
     var result;
     try {
       if (name === "get_balance") {
+        // Auto-detect caller phone from VAPI message if not passed in args
+        if (!args.phone_number) {
+          var callerNum = null;
+          try {
+            callerNum = body.message.call.customer.number || null;
+          } catch(e) {}
+          if (callerNum) {
+            args.phone_number = callerNum;
+            console.log("[VAPI] Auto caller ID:", callerNum);
+          }
+        }
         result = await getBalance(args);
         if (args.phone_number) cachePhone(args.phone_number);
+        if (result.customer_phone) cachePhone(result.customer_phone);
       }
       else if (name === "search_products") {
         result = await searchProducts(args);
