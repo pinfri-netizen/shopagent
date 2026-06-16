@@ -25,29 +25,29 @@ app.listen(PORT, () => console.log("ShopAgent v2 running on port " + PORT));
 let dbReady = false;
 let dbModule = null;
 
-// Session cache — stores phone number and last search results per active call
-// Keyed by 60-second time window so concurrent calls don't interfere
-const callSessions = {};
-function sessionKey() { return Math.floor(Date.now() / 60000); }
+// Simple global store — keeps last phone and products across all tool calls
+let lastPhone = null;
+let lastProducts = null;
+
 function cachePhone(phone) {
-  const k = sessionKey();
-  callSessions[k] = callSessions[k] || {};
-  callSessions[k].phone = phone;
-  // Clean old sessions
-  Object.keys(callSessions).forEach(old => { if (old < k - 5) delete callSessions[old]; });
+  if (phone) {
+    lastPhone = phone.replace(/\D/g, "");
+    console.log("[CACHE] Stored phone:", lastPhone);
+  }
 }
 function cacheProducts(products) {
-  const k = sessionKey();
-  callSessions[k] = callSessions[k] || {};
-  callSessions[k].products = products;
+  if (products && products.length > 0) {
+    lastProducts = products;
+    console.log("[CACHE] Stored", products.length, "products");
+  }
 }
 function getCachedPhone() {
-  const k = sessionKey();
-  return (callSessions[k] || callSessions[k-1] || {}).phone;
+  console.log("[CACHE] Getting phone:", lastPhone);
+  return lastPhone;
 }
 function getCachedProducts() {
-  const k = sessionKey();
-  return (callSessions[k] || callSessions[k-1] || {}).products;
+  console.log("[CACHE] Getting products:", lastProducts ? lastProducts.length : 0);
+  return lastProducts;
 }
 
 async function initDb() {
