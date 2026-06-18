@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ShopAgent — Admin Dashboard</title>
+<title>ShopAgent Admin</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -15,17 +15,28 @@
   --t1:#f0f0ff;--t2:#a0a0c0;--t3:#60607a;
 }
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--t1);min-height:100vh}
+.hidden{display:none!important}
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:36px;width:340px;text-align:center}
+.login-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;margin-bottom:6px}
+.login-logo span{color:var(--accent)}
+.login-sub{font-size:13px;color:var(--t3);margin-bottom:20px}
+.login-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:12px 14px;color:var(--t1);font-size:15px;font-family:'DM Sans',sans-serif;outline:none;margin-bottom:12px}
+.login-input:focus{border-color:var(--accent)}
+.login-btn{width:100%;background:var(--accent);color:white;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;font-weight:500}
+.login-btn:hover{background:#7c74ff}
+.login-err{color:var(--red);font-size:13px;margin-top:10px;min-height:20px}
 .layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
 .sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh}
 .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;margin-bottom:24px;padding:0 8px}
 .logo span{color:var(--accent)}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--t2);font-size:13px;cursor:pointer;margin-bottom:2px;transition:all .15s}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--t2);font-size:13px;cursor:pointer;margin-bottom:2px;transition:all .15s;user-select:none}
 .nav-item:hover{background:var(--bg3);color:var(--t1)}
 .nav-item.active{background:var(--accent-glow);color:var(--accent)}
 .main{padding:28px 32px;overflow-x:hidden}
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
 h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:700}
-.refresh-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--t2);padding:7px 14px;border-radius:8px;font-size:12px;cursor:pointer}
+.refresh-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--t2);padding:7px 14px;border-radius:8px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif}
 .refresh-btn:hover{color:var(--t1);border-color:var(--accent)}
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
 .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px}
@@ -33,7 +44,7 @@ h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:700}
 .stat-val{font-family:'Syne',sans-serif;font-size:28px;font-weight:800}
 .stat-sub{font-size:11px;color:var(--t3);margin-top:4px}
 .panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
-.panel-title{font-size:14px;font-weight:500;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.panel-title{font-size:14px;font-weight:500;margin-bottom:14px;color:var(--t1)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--t3);font-weight:400;padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
 td{padding:10px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--t2)}
@@ -46,131 +57,282 @@ tr:last-child td{border-bottom:none}
 .badge-gray{background:rgba(255,255,255,.08);color:var(--t3)}
 .empty{text-align:center;color:var(--t3);padding:30px;font-size:13px}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.loading{text-align:center;padding:60px;color:var(--t3)}
-.search-box{background:var(--bg);min-width:0}
-.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
-.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;width:320px;text-align:center}
-.login-card input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--t1);margin:14px 0;font-size:14px}
-.login-card button{width:100%;background:var(--accent);color:white;border:none;padding:10px;border-radius:8px;cursor:pointer;font-size:14px}
-.hidden{display:none}
+.loading{text-align:center;padding:60px;color:var(--t3);font-size:14px}
+@media(max-width:768px){.stats-grid{grid-template-columns:1fr 1fr}.grid-2{grid-template-columns:1fr}.layout{grid-template-columns:1fr}.sidebar{display:none}}
 </style>
 </head>
 <body>
 
+<!-- LOGIN -->
 <div id="login-screen" class="login-screen">
   <div class="login-card">
-    <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:20px;margin-bottom:6px">Shop<span style="color:#6c63ff">Agent</span></div>
-    <div style="font-size:13px;color:#a0a0c0;margin-bottom:10px">Admin Dashboard</div>
-    <input type="password" id="admin-pass" placeholder="Enter admin password">
-    <button onclick="checkLogin()">Enter</button>
-    <div id="login-err" style="color:#ef4444;font-size:12px;margin-top:10px"></div>
+    <div class="login-logo">Shop<span>Agent</span></div>
+    <div class="login-sub">Admin Dashboard</div>
+    <input type="password" id="admin-pass" class="login-input" placeholder="Enter admin password" autocomplete="current-password">
+    <button class="login-btn" id="login-btn">Sign in →</button>
+    <div class="login-err" id="login-err"></div>
   </div>
 </div>
 
+<!-- DASHBOARD -->
 <div id="dashboard" class="layout hidden">
   <div class="sidebar">
     <div class="logo">Shop<span>Agent</span></div>
-    <div class="nav-item active" onclick="showPage('dashboard', this)"><span>📊</span> Dashboard</div>
-    <div class="nav-item" onclick="showPage('costs', this)"><span>💰</span> Costs & profit</div>
-    <div class="nav-item" onclick="showPage('dashboard', this)"><span>👥</span> Customers</div>
-    <div class="nav-item" onclick="showPage('dashboard', this)"><span>📦</span> Orders</div>
-    <div class="nav-item" onclick="showPage('dashboard', this)"><span>📞</span> Call history</div>
-    <div class="nav-item"><span>⚙️</span> Agent config</div>
+    <div class="nav-item active" id="nav-dashboard" onclick="switchPage('dashboard')"><span>📊</span> Dashboard</div>
+    <div class="nav-item" id="nav-customers" onclick="switchPage('customers')"><span>👥</span> Customers</div>
+    <div class="nav-item" id="nav-orders" onclick="switchPage('orders')"><span>📦</span> Orders</div>
+    <div class="nav-item" id="nav-costs" onclick="switchPage('costs')"><span>💰</span> Costs & profit</div>
   </div>
-
   <div class="main">
-    <div class="header">
-      <h1 id="page-title">Dashboard overview</h1>
-      <button class="refresh-btn" onclick="refreshCurrent()">↻ Refresh</button>
+    <div class="page-header">
+      <h1 id="page-title">Dashboard</h1>
+      <button class="refresh-btn" onclick="refreshPage()">↻ Refresh</button>
     </div>
-
-    <div id="content" class="loading">Loading dashboard...</div>
+    <div id="content"><div class="loading">Loading...</div></div>
   </div>
 </div>
 
 <script>
-const BASE = window.location.origin;
-const ADMIN_PASS = "shopagent2026"; // change this!
+var BASE = window.location.origin;
+var PASS = "shopagent2026";
+var currentPage = "dashboard";
+var cachedData = {};
 
-function checkLogin() {
-  const val = document.getElementById("admin-pass").value;
-  if (val === ADMIN_PASS) {
-    document.getElementById("login-screen").classList.add("hidden");
-    document.getElementById("dashboard").classList.remove("hidden");
-    loadAll();
+function $(id) { return document.getElementById(id); }
+
+// ── LOGIN ──────────────────────────────────────────────
+function doLogin() {
+  var val = $("admin-pass").value;
+  if (!val) { $("login-err").textContent = "Please enter the password"; return; }
+  if (val === PASS) {
+    $("login-screen").classList.add("hidden");
+    $("dashboard").classList.remove("hidden");
+    $("login-err").textContent = "";
+    loadDashboard();
   } else {
-    document.getElementById("login-err").textContent = "Incorrect password";
+    $("login-err").textContent = "Wrong password — try shopagent2026";
+    $("admin-pass").value = "";
+    $("admin-pass").focus();
   }
 }
-document.getElementById("admin-pass").addEventListener("keydown", e => { if (e.key === "Enter") checkLogin(); });
 
-let currentPage = "dashboard";
+$("login-btn").addEventListener("click", doLogin);
+$("admin-pass").addEventListener("keydown", function(e) { if (e.key === "Enter") doLogin(); });
 
-function showPage(page, el) {
+// ── PAGE ROUTING ───────────────────────────────────────
+function switchPage(page) {
   currentPage = page;
-  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-  if (el) el.classList.add("active");
-  document.getElementById("page-title").textContent = page === "costs" ? "Costs & profit" : "Dashboard overview";
-  if (page === "costs") loadCosts();
-  else loadAll();
+  document.querySelectorAll(".nav-item").forEach(function(el) { el.classList.remove("active"); });
+  var navEl = $("nav-" + page);
+  if (navEl) navEl.classList.add("active");
+  var titles = { dashboard: "Dashboard", customers: "Customers", orders: "Orders", costs: "Costs & profit" };
+  $("page-title").textContent = titles[page] || page;
+  if (page === "dashboard") loadDashboard();
+  else if (page === "customers") loadCustomers();
+  else if (page === "orders") loadOrders();
+  else if (page === "costs") loadCosts();
 }
 
-function refreshCurrent() {
-  if (currentPage === "costs") loadCosts();
-  else loadAll();
-}
+function refreshPage() { switchPage(currentPage); }
 
-async function loadCosts() {
-  document.getElementById("content").innerHTML = '<div class="loading">Loading cost data...</div>';
+// ── HELPERS ────────────────────────────────────────────
+function fmtMoney(n) { return "$" + (parseFloat(n) || 0).toFixed(2); }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"; }
+function truncate(s, n) { return s ? (s.length > n ? s.slice(0, n) + "…" : s) : "—"; }
+function statusBadge(s) {
+  var map = { processing: "badge-blue", placed: "badge-blue", delivered: "badge-green", confirmed: "badge-green", active: "badge-green", new: "badge-gray" };
+  return '<span class="badge ' + (map[s] || "badge-gray") + '">' + (s || "—") + '</span>';
+}
+function statCard(label, val, sub) {
+  return '<div class="stat-card"><div class="stat-label">' + label + '</div><div class="stat-val">' + val + '</div><div class="stat-sub">' + sub + '</div></div>';
+}
+function setContent(html) { $("content").innerHTML = html; }
+
+// ── DASHBOARD PAGE ─────────────────────────────────────
+async function loadDashboard() {
+  setContent('<div class="loading">Loading dashboard...</div>');
   try {
-    const res = await fetch(BASE + "/api/admin/costs");
-    const data = await res.json();
-    renderCosts(data);
+    var res = await fetch(BASE + "/api/admin/stats");
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+    cachedData.stats = data;
+    renderDashboard(data);
   } catch (e) {
-    document.getElementById("content").innerHTML = '<div class="empty">Error loading costs: ' + e.message + '</div>';
+    setContent('<div class="empty">Error loading dashboard: ' + e.message + '</div>');
   }
 }
 
-function renderCosts(data) {
-  const t = data.totals || {};
-  const margin = t.total_revenue > 0 ? ((t.total_profit / t.total_revenue) * 100).toFixed(1) : "0";
-
-  let html = '';
+function renderDashboard(data) {
+  var c = data.customers || {};
+  var o = data.orders || {};
+  var calls = data.calls || {};
+  var html = '';
 
   html += '<div class="stats-grid">';
-  html += statCard("Total revenue", fmtMoney(t.total_revenue), (t.call_count || 0) + " calls tracked");
-  html += statCard("Total cost", fmtMoney(t.total_cost), "VAPI + Anthropic + SMS + Zinc");
-  html += statCard("Net profit", fmtMoney(t.total_profit), margin + "% margin");
-  html += statCard("Avg cost/call", fmtMoney((t.total_cost || 0) / Math.max(1, t.call_count || 1)), "across all calls");
+  html += statCard("Customers", c.total || 0, (c.active || 0) + " active");
+  html += statCard("Orders", o.total || 0, (o.processing || 0) + " processing");
+  html += statCard("Revenue", fmtMoney(c.total_revenue), "lifetime spend");
+  html += statCard("Minutes sold", c.total_minutes || 0, (calls.total_calls || 0) + " calls");
   html += '</div>';
 
-  // Cost breakdown by provider
-  html += '<div class="panel"><div class="panel-title">Cost breakdown by provider</div>';
-  if (!data.byProvider || data.byProvider.length === 0) {
-    html += '<div class="empty">No cost events recorded yet</div>';
+  html += '<div class="grid-2">';
+  html += '<div class="panel"><div class="panel-title">Recent orders</div>';
+  var recentOrders = data.recentOrders || [];
+  if (recentOrders.length === 0) {
+    html += '<div class="empty">No orders yet</div>';
   } else {
-    html += '<table><thead><tr><th>Provider</th><th>Event type</th><th>Count</th><th>Total cost</th></tr></thead><tbody>';
-    data.byProvider.forEach(row => {
-      html += '<tr><td class="strong">' + capitalize(row.provider) + '</td><td>' + row.event_type.replace(/_/g, " ") + '</td><td>' + row.count + '</td><td>' + fmtMoney(row.total) + '</td></tr>';
+    html += '<table><thead><tr><th>Product</th><th>Price</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    recentOrders.forEach(function(o) {
+      html += '<tr><td class="strong">' + truncate(o.product_title, 26) + '</td><td>' + (o.product_price || "—") + '</td><td>' + statusBadge(o.status) + '</td><td>' + fmtDate(o.created_at) + '</td></tr>';
     });
     html += '</tbody></table>';
   }
   html += '</div>';
 
-  // Per-call profit breakdown
-  html += '<div class="panel"><div class="panel-title">Per-call profit breakdown (most recent 50)</div>';
-  if (!data.perCall || data.perCall.length === 0) {
+  html += '<div class="panel"><div class="panel-title">Recent customers</div>';
+  var recentCustomers = data.recentCustomers || [];
+  if (recentCustomers.length === 0) {
+    html += '<div class="empty">No customers yet</div>';
+  } else {
+    html += '<table><thead><tr><th>Phone</th><th>Balance</th><th>Orders</th><th>Joined</th></tr></thead><tbody>';
+    recentCustomers.forEach(function(cu) {
+      html += '<tr><td class="strong">' + (cu.phone || "—") + '</td><td>' + (cu.balance_minutes || 0) + ' min</td><td>' + (cu.total_orders || 0) + '</td><td>' + fmtDate(cu.created_at) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  setContent(html);
+}
+
+// ── CUSTOMERS PAGE ─────────────────────────────────────
+async function loadCustomers() {
+  setContent('<div class="loading">Loading customers...</div>');
+  try {
+    var res = await fetch(BASE + "/api/admin/customers");
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    var customers = await res.json();
+    renderCustomers(customers);
+  } catch (e) {
+    setContent('<div class="empty">Error: ' + e.message + '</div>');
+  }
+}
+
+function renderCustomers(customers) {
+  var html = '<div class="panel"><div class="panel-title">All customers (' + customers.length + ')</div>';
+  if (customers.length === 0) {
+    html += '<div class="empty">No customers yet</div>';
+  } else {
+    html += '<table><thead><tr><th>Phone</th><th>Name</th><th>Balance</th><th>Orders</th><th>Spent</th><th>Status</th><th>Joined</th></tr></thead><tbody>';
+    customers.forEach(function(cu) {
+      html += '<tr>' +
+        '<td class="strong">' + (cu.phone || "—") + '</td>' +
+        '<td>' + (cu.name || "—") + '</td>' +
+        '<td>' + (cu.balance_minutes || 0) + ' min</td>' +
+        '<td>' + (cu.total_orders || 0) + '</td>' +
+        '<td>' + fmtMoney(cu.total_spent) + '</td>' +
+        '<td>' + statusBadge(cu.status) + '</td>' +
+        '<td>' + fmtDate(cu.created_at) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  setContent(html);
+}
+
+// ── ORDERS PAGE ────────────────────────────────────────
+async function loadOrders() {
+  setContent('<div class="loading">Loading orders...</div>');
+  try {
+    var res = await fetch(BASE + "/api/admin/orders");
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    var orders = await res.json();
+    renderOrders(orders);
+  } catch (e) {
+    setContent('<div class="empty">Error: ' + e.message + '</div>');
+  }
+}
+
+function renderOrders(orders) {
+  var html = '<div class="panel"><div class="panel-title">All orders (' + orders.length + ')</div>';
+  if (orders.length === 0) {
+    html += '<div class="empty">No orders yet</div>';
+  } else {
+    html += '<table><thead><tr><th>Order ID</th><th>Customer</th><th>Product</th><th>Price</th><th>Status</th><th>Est. delivery</th><th>Date</th></tr></thead><tbody>';
+    orders.forEach(function(o) {
+      html += '<tr>' +
+        '<td class="strong" style="font-size:11px">' + (o.order_id || "—") + '</td>' +
+        '<td>' + (o.customer_phone || "—") + '</td>' +
+        '<td>' + truncate(o.product_title, 24) + '</td>' +
+        '<td>' + (o.product_price || "—") + '</td>' +
+        '<td>' + statusBadge(o.status) + '</td>' +
+        '<td>' + (o.estimated_delivery || "—") + '</td>' +
+        '<td>' + fmtDate(o.created_at) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  setContent(html);
+}
+
+// ── COSTS PAGE ─────────────────────────────────────────
+async function loadCosts() {
+  setContent('<div class="loading">Loading cost data...</div>');
+  try {
+    var res = await fetch(BASE + "/api/admin/costs");
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderCosts(data);
+  } catch (e) {
+    setContent('<div class="empty">Error loading costs: ' + e.message + '<br><br>This page will populate after calls are made.</div>');
+  }
+}
+
+function renderCosts(data) {
+  var t = data.totals || {};
+  var margin = parseFloat(t.total_revenue) > 0 ? ((parseFloat(t.total_profit) / parseFloat(t.total_revenue)) * 100).toFixed(1) : "0";
+  var html = '';
+
+  html += '<div class="stats-grid">';
+  html += statCard("Total revenue", fmtMoney(t.total_revenue), (t.call_count || 0) + " calls tracked");
+  html += statCard("Total cost", fmtMoney(t.total_cost), "all providers combined");
+  html += statCard("Net profit", fmtMoney(t.total_profit), margin + "% margin");
+  html += statCard("Avg cost/call", fmtMoney((parseFloat(t.total_cost) || 0) / Math.max(1, parseInt(t.call_count) || 1)), "across all calls");
+  html += '</div>';
+
+  html += '<div class="panel"><div class="panel-title">Cost breakdown by provider</div>';
+  var byProvider = data.byProvider || [];
+  if (byProvider.length === 0) {
+    html += '<div class="empty">No cost events recorded yet — make a call to start tracking</div>';
+  } else {
+    html += '<table><thead><tr><th>Provider</th><th>Type</th><th>Count</th><th>Total cost</th></tr></thead><tbody>';
+    byProvider.forEach(function(row) {
+      html += '<tr><td class="strong">' + capitalize(row.provider) + '</td><td>' + (row.event_type || "").replace(/_/g, " ") + '</td><td>' + row.count + '</td><td>' + fmtMoney(row.total) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  html += '<div class="panel"><div class="panel-title">Per-call profit breakdown</div>';
+  var perCall = data.perCall || [];
+  if (perCall.length === 0) {
     html += '<div class="empty">No calls with cost data yet</div>';
   } else {
     html += '<table><thead><tr><th>Phone</th><th>Duration</th><th>Cost</th><th>Revenue</th><th>Profit</th><th>Date</th></tr></thead><tbody>';
-    data.perCall.forEach(c => {
-      const profitColor = parseFloat(c.profit) >= 0 ? "var(--green)" : "var(--red)";
+    perCall.forEach(function(c) {
+      var profit = parseFloat(c.profit) || 0;
+      var color = profit >= 0 ? "var(--green)" : "var(--red)";
       html += '<tr>' +
         '<td class="strong">' + (c.customer_phone || "—") + '</td>' +
         '<td>' + Math.round((c.duration_seconds || 0) / 60) + ' min</td>' +
         '<td>' + fmtMoney(c.total_cost) + '</td>' +
         '<td>' + fmtMoney(c.revenue) + '</td>' +
-        '<td style="color:' + profitColor + '">' + fmtMoney(c.profit) + '</td>' +
+        '<td style="color:' + color + '">' + fmtMoney(c.profit) + '</td>' +
         '<td>' + fmtDate(c.created_at) + '</td>' +
         '</tr>';
     });
@@ -178,111 +340,10 @@ function renderCosts(data) {
   }
   html += '</div>';
 
-  document.getElementById("content").innerHTML = html;
+  setContent(html);
 }
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ""; }
-
-  document.getElementById("content").innerHTML = '<div class="loading">Loading dashboard...</div>';
-  try {
-    const [statsRes, ordersRes, customersRes] = await Promise.all([
-      fetch(BASE + "/api/admin/stats"),
-      fetch(BASE + "/api/admin/orders"),
-      fetch(BASE + "/api/admin/customers"),
-    ]);
-    const stats = await statsRes.json();
-    const orders = await ordersRes.json();
-    const customers = await customersRes.json();
-    render(stats, orders, customers);
-  } catch (e) {
-    document.getElementById("content").innerHTML = '<div class="empty">Error loading dashboard: ' + e.message + '</div>';
-  }
-}
-
-function fmtMoney(n) { return "$" + (parseFloat(n) || 0).toFixed(2); }
-function fmtDate(d) { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
-
-function statusBadge(status) {
-  const map = { processing: "badge-blue", placed: "badge-blue", delivered: "badge-green", confirmed: "badge-green", new: "badge-gray", active: "badge-green" };
-  const cls = map[status] || "badge-gray";
-  return '<span class="badge ' + cls + '">' + status + '</span>';
-}
-
-function render(stats, orders, customers) {
-  const c = stats.customers || {};
-  const o = stats.orders || {};
-  const calls = stats.calls || {};
-
-  let html = '';
-
-  html += '<div class="stats-grid">';
-  html += statCard("Total customers", c.total || 0, (c.active || 0) + " active accounts");
-  html += statCard("Total orders", o.total || 0, (o.processing || 0) + " processing");
-  html += statCard("Revenue", fmtMoney(c.total_revenue), "lifetime customer spend");
-  html += statCard("Minutes used", calls.total_minutes_used || 0, (calls.total_calls || 0) + " total calls");
-  html += '</div>';
-
-  html += '<div class="grid-2">';
-
-  // Recent orders panel
-  html += '<div class="panel"><div class="panel-title">Recent orders</div>';
-  if (orders.length === 0) {
-    html += '<div class="empty">No orders yet</div>';
-  } else {
-    html += '<table><thead><tr><th>Product</th><th>Price</th><th>Status</th><th>Date</th></tr></thead><tbody>';
-    orders.slice(0, 8).forEach(o => {
-      html += '<tr><td class="strong">' + truncate(o.product_title, 28) + '</td><td>' + (o.product_price || "") + '</td><td>' + statusBadge(o.status) + '</td><td>' + fmtDate(o.created_at) + '</td></tr>';
-    });
-    html += '</tbody></table>';
-  }
-  html += '</div>';
-
-  // Recent customers panel
-  html += '<div class="panel"><div class="panel-title">Recent customers</div>';
-  if (customers.length === 0) {
-    html += '<div class="empty">No customers yet</div>';
-  } else {
-    html += '<table><thead><tr><th>Phone</th><th>Balance</th><th>Orders</th><th>Status</th></tr></thead><tbody>';
-    customers.slice(0, 8).forEach(cu => {
-      html += '<tr><td class="strong">' + (cu.phone || "") + '</td><td>' + (cu.balance_minutes || 0) + ' min</td><td>' + (cu.total_orders || 0) + '</td><td>' + statusBadge(cu.status) + '</td></tr>';
-    });
-    html += '</tbody></table>';
-  }
-  html += '</div>';
-
-  html += '</div>'; // grid-2
-
-  // All customers table
-  html += '<div class="panel"><div class="panel-title">All customers (' + customers.length + ')</div>';
-  if (customers.length === 0) {
-    html += '<div class="empty">No customers yet</div>';
-  } else {
-    html += '<table><thead><tr><th>Phone</th><th>Name</th><th>Balance</th><th>Orders</th><th>Spent</th><th>Joined</th></tr></thead><tbody>';
-    customers.forEach(cu => {
-      html += '<tr>' +
-        '<td class="strong">' + (cu.phone || "") + '</td>' +
-        '<td>' + (cu.name || "—") + '</td>' +
-        '<td>' + (cu.balance_minutes || 0) + ' min</td>' +
-        '<td>' + (cu.total_orders || 0) + '</td>' +
-        '<td>' + fmtMoney(cu.total_spent) + '</td>' +
-        '<td>' + fmtDate(cu.created_at) + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table>';
-  }
-  html += '</div>';
-
-  document.getElementById("content").innerHTML = html;
-}
-
-function statCard(label, val, sub) {
-  return '<div class="stat-card"><div class="stat-label">' + label + '</div><div class="stat-val">' + val + '</div><div class="stat-sub">' + sub + '</div></div>';
-}
-
-function truncate(s, n) {
-  if (!s) return "—";
-  return s.length > n ? s.slice(0, n) + "…" : s;
-}
 </script>
 </body>
 </html>
