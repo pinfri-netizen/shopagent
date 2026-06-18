@@ -209,19 +209,23 @@ app.post("/vapi/webhook", async function(req, res) {
     }
   }
 
-  if (message.type === "call-ended" && dbReady) {
-    var mins = Math.ceil(((message.call || {}).duration || 0) / 60);
-    var phone = ((message.call || {}).customer || {}).number;
+  if (message.type === "end-of-call-report" && dbReady) {
+    var durationSec = (message.durationSeconds || (message.call || {}).duration || 0);
+    var mins = Math.ceil(durationSec / 60);
+    var phone = ((message.call || {}).customer || {}).number || getCachedPhone();
+    console.log("[WEBHOOK] Call ended. Duration:", durationSec, "s =", mins, "min. Phone:", phone);
     if (phone && mins > 0) {
       try {
         await db().saveCall({
           call_id: (message.call || {}).id,
           customer_phone: phone,
-          duration_seconds: (message.call || {}).duration || 0,
+          duration_seconds: durationSec,
           minutes_billed: mins,
           outcome: "completed",
         });
-      } catch(e) { console.error("[WEBHOOK]", e.message); }
+        var newBal = await db().deductBalance(phone, mins);
+        console.log("[WEBHOOK] Deducted", mins, "min from", phone, "- new balance:", newBal);
+      } catch(e) { console.error("[WEBHOOK] Deduct error:", e.message); }
     }
   }
   res.sendStatus(200);
@@ -306,6 +310,51 @@ app.post("/api/topup/webhook", express.raw({ type: "application/json" }), async 
 app.get("/api/admin/customers", async function(req, res) {
   try { res.json(await db().getAllCustomers()); }
   catch(err) { res.status(503).json({ error: err.message }); }
+});
+
+// Admin dashboard summary stats
+app.get("/api/admin/stats", async function(req, res) {
+  try {
+    var p = db().getPool ? db().getPool() : db().pool;
+    var customers = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status != \'new\' THEN 1 ELSE 0 END) as active, SUM(balance_minutes) as total_minutes, SUM(total_spent) as total_revenue FROM customers");
+    var orders = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status = \'processing\' THEN 1 ELSE 0 END) as processing FROM orders");
+    var recentOrders = await p.query("SELECT * FROM orders ORDER BY created_at DESC LIMIT 10");
+    var recentCustomers = await p.query("SELECT * FROM customers ORDER BY created_at DESC LIMIT 10");
+    var callStats = await p.query("SELECT COUNT(*) as total_calls, SUM(minutes_billed) as total_minutes_used FROM calls");
+
+    res.json({
+      customers: customers.rows[0],
+      orders: orders.rows[0],
+      calls: callStats.rows[0],
+      recentOrders: recentOrders.rows,
+      recentCustomers: recentCustomers.rows,
+    });
+  } catch(err) {
+    console.error("[ADMIN STATS]", err.message);
+    res.status(503).json({ error: err.message });
+  }
+});
+
+// Admin - get all orders
+app.get("/api/admin/orders", async function(req, res) {
+  try {
+    var p = db().getPool ? db().getPool() : db().pool;
+    var result = await p.query("SELECT * FROM orders ORDER BY created_at DESC LIMIT 100");
+    res.json(result.rows);
+  } catch(err) {
+    res.status(503).json({ error: err.message });
+  }
+});
+
+// Admin - get all calls
+app.get("/api/admin/calls", async function(req, res) {
+  try {
+    var p = db().getPool ? db().getPool() : db().pool;
+    var result = await p.query("SELECT * FROM calls ORDER BY created_at DESC LIMIT 100");
+    res.json(result.rows);
+  } catch(err) {
+    res.status(503).json({ error: err.message });
+  }
 });
 
 app.post("/api/admin/add-minutes", async function(req, res) {
