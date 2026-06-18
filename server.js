@@ -5,7 +5,7 @@ const app = express();
 
 app.use((req, res, next) => {
   if (req.path === "/api/topup/webhook") return next();
-  express.json()(req, res, next);
+  express.json({ limit: "10mb" })(req, res, next);
 });
 app.use(express.static(path.join(__dirname, "public")));
 
