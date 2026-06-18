@@ -333,8 +333,32 @@ app.get("/api/admin/customers", async function(req, res) {
 app.get("/api/admin/stats", async function(req, res) {
   try {
     var p = db().getPool ? db().getPool() : db().pool;
-    var customers = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status != \'new\' THEN 1 ELSE 0 END) as active, SUM(balance_minutes) as total_minutes, SUM(total_spent) as total_revenue FROM customers");
-    var orders = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status = \'processing\' THEN 1 ELSE 0 END) as processing FROM orders");
+
+    // Create missing tables if they don't exist yet
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS cost_events (
+        id SERIAL PRIMARY KEY,
+        call_id VARCHAR(100),
+        customer_phone VARCHAR(20),
+        event_type VARCHAR(50),
+        provider VARCHAR(30),
+        cost DECIMAL(10,4) DEFAULT 0,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Add cost columns to calls if missing
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS vapi_cost DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS anthropic_cost DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS sms_cost DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS search_cost DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS total_cost DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS revenue DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+    await p.query("ALTER TABLE calls ADD COLUMN IF NOT EXISTS profit DECIMAL(10,4) DEFAULT 0").catch(()=>{});
+
+    var customers = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status != 'new' THEN 1 ELSE 0 END) as active, SUM(balance_minutes) as total_minutes, SUM(total_spent) as total_revenue FROM customers");
+    var orders = await p.query("SELECT COUNT(*) as total, SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing FROM orders");
     var recentOrders = await p.query("SELECT * FROM orders ORDER BY created_at DESC LIMIT 10");
     var recentCustomers = await p.query("SELECT * FROM customers ORDER BY created_at DESC LIMIT 10");
     var callStats = await p.query("SELECT COUNT(*) as total_calls, SUM(minutes_billed) as total_minutes_used FROM calls");
