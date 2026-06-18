@@ -14,6 +14,7 @@ const { sendProductSMS } = require("./tools/sms");
 const { placeOrder } = require("./tools/order");
 const { trackPackage } = require("./tools/tracking");
 const { getBalance, deductMinutes } = require("./tools/billing");
+const costTracking = require("./tools/costTracking");
 let topupByPhone;
 try {
   topupByPhone = require("./tools/topup").topupByPhone;
@@ -132,6 +133,8 @@ app.post("/vapi/tools", async function(req, res) {
 
   if (!toolCalls.length) return res.json({ results: [] });
 
+  var callId = (body.message && body.message.call && body.message.call.id) || "unknown";
+
   var results = await Promise.all(toolCalls.map(async function(tc) {
     var name = tc.function ? tc.function.name : tc.name;
     var args = {};
@@ -163,13 +166,18 @@ app.post("/vapi/tools", async function(req, res) {
       else if (name === "search_products") {
         result = await searchProducts(args);
         if (result.success && result.products) cacheProducts(result.products);
+        costTracking.logSearch(callId, getCachedPhone()).catch(()=>{});
       }
       else if (name === "send_sms") {
         if (!args.to_number) args.to_number = getCachedPhone();
         if (!args.products || args.products.length === 0) args.products = getCachedProducts();
         result = await sendProductSMS(args);
+        if (result.success) costTracking.logSms(callId, args.to_number, (args.products||[]).length + 1).catch(()=>{});
       }
-      else if (name === "place_order")    result = await placeOrder(args);
+      else if (name === "place_order") {
+        result = await placeOrder(args);
+        if (result.success && result.order_id) costTracking.logZincOrder(callId, args.customer_phone, result.order_id).catch(()=>{});
+      }
       else if (name === "track_package")  result = await trackPackage(args);
       else if (name === "deduct_minutes") result = await deductMinutes(args);
       else if (name === "topup_by_phone") result = await topupByPhone(args);
@@ -225,6 +233,15 @@ app.post("/vapi/webhook", async function(req, res) {
         });
         var newBal = await db().deductBalance(phone, mins);
         console.log("[WEBHOOK] Deducted", mins, "min from", phone, "- new balance:", newBal);
+
+        // Log call infra cost and compute profit summary
+        var callIdForCost = (message.call || {}).id || "unknown";
+        // VAPI needs a few seconds after call end to finalize cost data
+        setTimeout(function() {
+          costTracking.logCallCost(callIdForCost, phone, durationSec, mins, 0.60).catch(function(e) {
+            console.error("[COST] Delayed cost log error:", e.message);
+          });
+        }, 8000);
       } catch(e) { console.error("[WEBHOOK] Deduct error:", e.message); }
     }
   }
@@ -353,6 +370,56 @@ app.get("/api/admin/calls", async function(req, res) {
     var result = await p.query("SELECT * FROM calls ORDER BY created_at DESC LIMIT 100");
     res.json(result.rows);
   } catch(err) {
+    res.status(503).json({ error: err.message });
+  }
+});
+
+// Admin - cost & profit breakdown
+app.get("/api/admin/costs", async function(req, res) {
+  try {
+    var p = db().getPool ? db().getPool() : db().pool;
+
+    // Overall totals
+    var totals = await p.query(`
+      SELECT
+        COALESCE(SUM(total_cost), 0) as total_cost,
+        COALESCE(SUM(revenue), 0) as total_revenue,
+        COALESCE(SUM(profit), 0) as total_profit,
+        COUNT(*) as call_count
+      FROM calls
+    `);
+
+    // Cost breakdown by provider
+    var byProvider = await p.query(`
+      SELECT provider, event_type, COUNT(*) as count, COALESCE(SUM(cost), 0) as total
+      FROM cost_events
+      GROUP BY provider, event_type
+      ORDER BY total DESC
+    `);
+
+    // Zinc order costs vs Stripe revenue
+    var orderEconomics = await p.query(`
+      SELECT COUNT(*) as total_orders, COALESCE(SUM(zinc_cost), 0) as total_zinc_cost
+      FROM orders
+    `);
+
+    // Per-call breakdown (most recent 50)
+    var perCall = await p.query(`
+      SELECT call_id, customer_phone, duration_seconds, minutes_billed,
+             vapi_cost, anthropic_cost, sms_cost, search_cost, total_cost, revenue, profit, created_at
+      FROM calls
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+
+    res.json({
+      totals: totals.rows[0],
+      byProvider: byProvider.rows,
+      orderEconomics: orderEconomics.rows[0],
+      perCall: perCall.rows,
+    });
+  } catch(err) {
+    console.error("[ADMIN COSTS]", err.message);
     res.status(503).json({ error: err.message });
   }
 });
