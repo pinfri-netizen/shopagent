@@ -70,18 +70,18 @@ tr:last-child td{border-bottom:none}
 <div id="dashboard" class="layout hidden">
   <div class="sidebar">
     <div class="logo">Shop<span>Agent</span></div>
-    <div class="nav-item active"><span>📊</span> Dashboard</div>
-    <div class="nav-item"><span>👥</span> Customers</div>
-    <div class="nav-item"><span>📦</span> Orders</div>
-    <div class="nav-item"><span>📞</span> Call history</div>
-    <div class="nav-item"><span>💳</span> Billing</div>
+    <div class="nav-item active" onclick="showPage('dashboard', this)"><span>📊</span> Dashboard</div>
+    <div class="nav-item" onclick="showPage('costs', this)"><span>💰</span> Costs & profit</div>
+    <div class="nav-item" onclick="showPage('dashboard', this)"><span>👥</span> Customers</div>
+    <div class="nav-item" onclick="showPage('dashboard', this)"><span>📦</span> Orders</div>
+    <div class="nav-item" onclick="showPage('dashboard', this)"><span>📞</span> Call history</div>
     <div class="nav-item"><span>⚙️</span> Agent config</div>
   </div>
 
   <div class="main">
     <div class="header">
-      <h1>Dashboard overview</h1>
-      <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+      <h1 id="page-title">Dashboard overview</h1>
+      <button class="refresh-btn" onclick="refreshCurrent()">↻ Refresh</button>
     </div>
 
     <div id="content" class="loading">Loading dashboard...</div>
@@ -104,7 +104,85 @@ function checkLogin() {
 }
 document.getElementById("admin-pass").addEventListener("keydown", e => { if (e.key === "Enter") checkLogin(); });
 
-async function loadAll() {
+let currentPage = "dashboard";
+
+function showPage(page, el) {
+  currentPage = page;
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  if (el) el.classList.add("active");
+  document.getElementById("page-title").textContent = page === "costs" ? "Costs & profit" : "Dashboard overview";
+  if (page === "costs") loadCosts();
+  else loadAll();
+}
+
+function refreshCurrent() {
+  if (currentPage === "costs") loadCosts();
+  else loadAll();
+}
+
+async function loadCosts() {
+  document.getElementById("content").innerHTML = '<div class="loading">Loading cost data...</div>';
+  try {
+    const res = await fetch(BASE + "/api/admin/costs");
+    const data = await res.json();
+    renderCosts(data);
+  } catch (e) {
+    document.getElementById("content").innerHTML = '<div class="empty">Error loading costs: ' + e.message + '</div>';
+  }
+}
+
+function renderCosts(data) {
+  const t = data.totals || {};
+  const margin = t.total_revenue > 0 ? ((t.total_profit / t.total_revenue) * 100).toFixed(1) : "0";
+
+  let html = '';
+
+  html += '<div class="stats-grid">';
+  html += statCard("Total revenue", fmtMoney(t.total_revenue), (t.call_count || 0) + " calls tracked");
+  html += statCard("Total cost", fmtMoney(t.total_cost), "VAPI + Anthropic + SMS + Zinc");
+  html += statCard("Net profit", fmtMoney(t.total_profit), margin + "% margin");
+  html += statCard("Avg cost/call", fmtMoney((t.total_cost || 0) / Math.max(1, t.call_count || 1)), "across all calls");
+  html += '</div>';
+
+  // Cost breakdown by provider
+  html += '<div class="panel"><div class="panel-title">Cost breakdown by provider</div>';
+  if (!data.byProvider || data.byProvider.length === 0) {
+    html += '<div class="empty">No cost events recorded yet</div>';
+  } else {
+    html += '<table><thead><tr><th>Provider</th><th>Event type</th><th>Count</th><th>Total cost</th></tr></thead><tbody>';
+    data.byProvider.forEach(row => {
+      html += '<tr><td class="strong">' + capitalize(row.provider) + '</td><td>' + row.event_type.replace(/_/g, " ") + '</td><td>' + row.count + '</td><td>' + fmtMoney(row.total) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  // Per-call profit breakdown
+  html += '<div class="panel"><div class="panel-title">Per-call profit breakdown (most recent 50)</div>';
+  if (!data.perCall || data.perCall.length === 0) {
+    html += '<div class="empty">No calls with cost data yet</div>';
+  } else {
+    html += '<table><thead><tr><th>Phone</th><th>Duration</th><th>Cost</th><th>Revenue</th><th>Profit</th><th>Date</th></tr></thead><tbody>';
+    data.perCall.forEach(c => {
+      const profitColor = parseFloat(c.profit) >= 0 ? "var(--green)" : "var(--red)";
+      html += '<tr>' +
+        '<td class="strong">' + (c.customer_phone || "—") + '</td>' +
+        '<td>' + Math.round((c.duration_seconds || 0) / 60) + ' min</td>' +
+        '<td>' + fmtMoney(c.total_cost) + '</td>' +
+        '<td>' + fmtMoney(c.revenue) + '</td>' +
+        '<td style="color:' + profitColor + '">' + fmtMoney(c.profit) + '</td>' +
+        '<td>' + fmtDate(c.created_at) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  document.getElementById("content").innerHTML = html;
+}
+
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ""; }
+
   document.getElementById("content").innerHTML = '<div class="loading">Loading dashboard...</div>';
   try {
     const [statsRes, ordersRes, customersRes] = await Promise.all([
