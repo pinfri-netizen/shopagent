@@ -36,10 +36,10 @@ async function sendProductSMS({ to_number, products, message_text }) {
       `📞 Say option 1, 2 or 3 to order`,
     ].join("\n");
 
-    await pingram.send({
+    await pingram.sms.send({
       type: "shopagent_sms",
-      to: { number: toNumber },
-      sms: { message: summary }
+      to: toNumber,
+      message: summary
     });
 
     // Messages 2, 3, 4 — one photo per product
@@ -48,13 +48,11 @@ async function sendProductSMS({ to_number, products, message_text }) {
       const imageUrl = p.image_url || p.thumbnail || "";
 
       if (imageUrl && imageUrl.startsWith("https://")) {
-        await pingram.send({
+        await pingram.sms.send({
           type: "shopagent_sms",
-          to: { number: toNumber },
-          sms: {
-            message: `Option ${i + 1}: ${p.title} — ${p.price}`,
-            mediaUrls: [imageUrl]
-          }
+          to: toNumber,
+          message: `Option ${i + 1}: ${p.title} — ${p.price}`,
+          mediaUrls: [imageUrl]
         });
         console.log("[SMS] MMS option", i + 1);
       }
