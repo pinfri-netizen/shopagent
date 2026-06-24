@@ -1,7 +1,96 @@
 require("dotenv").config();
 
-async function searchProducts({ query, sort, max_price }) {
-  console.log("[SEARCH] Searching for:", query, "sort:", sort);
+// Maps customer-friendly store names to SerpAPI engine IDs and display names
+const STORE_MAP = {
+  amazon:         { engine: "amazon",          label: "Amazon",        resultsKey: "organic_results" },
+  walmart:        { engine: "walmart",         label: "Walmart",       resultsKey: "organic_results" },
+  ebay:           { engine: "ebay",            label: "eBay",          resultsKey: "organic_results" },
+  home_depot:     { engine: "home_depot",      label: "Home Depot",    resultsKey: "products" },
+  google_shopping:{ engine: "google_shopping", label: "all stores",    resultsKey: "shopping_results" },
+};
+
+// Normalize a raw SerpAPI result item into our standard product shape
+function normalizeItem(item, engine, index, sort) {
+  let title, price, extractedPrice, rating, reviews, imageUrl, url, asin, source;
+
+  if (engine === "amazon") {
+    title         = item.title;
+    price         = item.price;
+    extractedPrice= item.extracted_price;
+    rating        = item.rating;
+    reviews       = item.reviews;
+    imageUrl      = item.thumbnail;
+    url           = item.link;
+    asin          = item.asin || (item.link ? (item.link.match(/\/dp\/([A-Z0-9]{10})/) || [])[1] : "") || "";
+    source        = "Amazon";
+  } else if (engine === "walmart") {
+    title         = item.title;
+    price         = item.primary_price || item.price;
+    extractedPrice= typeof price === "string" ? parseFloat(price.replace(/[^0-9.]/g, "")) : price;
+    rating        = item.rating;
+    reviews       = item.reviews;
+    imageUrl      = item.thumbnail;
+    url           = item.product_page_url || item.link;
+    asin          = "";
+    source        = "Walmart";
+  } else if (engine === "ebay") {
+    title         = item.title;
+    price         = item.price ? item.price.raw || item.price : null;
+    extractedPrice= item.price ? item.price.extracted || parseFloat(String(price).replace(/[^0-9.]/g, "")) : null;
+    rating        = item.rating;
+    reviews       = item.reviews;
+    imageUrl      = item.thumbnail;
+    url           = item.link;
+    asin          = "";
+    source        = "eBay";
+  } else if (engine === "home_depot") {
+    title         = item.title;
+    price         = item.price ? `$${item.price}` : null;
+    extractedPrice= item.price;
+    rating        = item.rating;
+    reviews       = item.reviews;
+    imageUrl      = item.thumbnail || item.image;
+    url           = item.link;
+    asin          = "";
+    source        = "Home Depot";
+  } else {
+    // google_shopping
+    title         = item.title;
+    price         = item.price;
+    extractedPrice= item.extracted_price;
+    rating        = item.rating;
+    reviews       = item.reviews;
+    imageUrl      = item.thumbnail;
+    url           = item.link;
+    asin          = item.link ? (item.link.match(/\/dp\/([A-Z0-9]{10})/) || [])[1] || "" : "";
+    source        = item.source || "Online store";
+  }
+
+  const badge = index === 0
+    ? (sort === "price_low" ? "Lowest price" : sort === "best_reviews" ? "Top rated" : "Best value")
+    : index === 1 ? "Popular pick" : "Great option";
+
+  return {
+    title:          title || "Product",
+    price:          price || "$0.00",
+    original_price: price || "$0.00",
+    rating:         rating ? rating.toString() : "4.5",
+    reviews:        reviews ? reviews.toLocaleString() : "100+",
+    prime:          engine === "amazon",
+    image_url:      imageUrl || "",
+    asin,
+    url:            url || "",
+    badge,
+    highlight:      `Available on ${source} — ${price || ""}`,
+    specs: [source, price, rating ? `${rating} stars` : "Highly rated"].filter(Boolean),
+    _extracted_price: extractedPrice || 999,
+  };
+}
+
+async function searchProducts({ query, sort, max_price, store }) {
+  const storeKey  = resolveStore(store);
+  const storeInfo = STORE_MAP[storeKey];
+  console.log("[SEARCH]", query, "| sort:", sort, "| store:", storeInfo.label);
 
   const sortText = {
     price_low:    "lowest price",
@@ -11,87 +100,85 @@ async function searchProducts({ query, sort, max_price }) {
 
   try {
     const apiKey = process.env.SERPAPI_KEY;
+    if (!apiKey) throw new Error("SERPAPI_KEY not set");
 
-    if (!apiKey) {
-      throw new Error("SERPAPI_KEY not set");
-    }
-
-    // Build SerpApi Google Shopping request
     const params = new URLSearchParams({
-      engine: "google_shopping",
-      q: query,
+      engine:  storeInfo.engine,
+      q:       query,
       api_key: apiKey,
-      num: "10",
-      gl: "us",
-      hl: "en",
+      num:     "10",
+      gl:      "us",
+      hl:      "en",
     });
 
-    if (max_price) params.append("tbs", `mr:1,price:1,ppr_max:${max_price}`);
-    if (sort === "best_reviews") params.append("tbs", "mr:1,avg_rating:400");
-
-    const url = `https://serpapi.com/search.json?${params.toString()}`;
-    console.log("[SEARCH] Calling SerpApi...");
-
-    const fetch = require("node-fetch");
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.error) throw new Error("SerpApi error: " + data.error);
-
-    const results = data.shopping_results || [];
-    console.log("[SEARCH] SerpApi returned", results.length, "results");
-
-    if (results.length === 0) throw new Error("No shopping results found");
-
-    // Sort results
-    let sorted = [...results];
-    if (sort === "price_low") {
-      sorted.sort((a, b) => (a.extracted_price || 999) - (b.extracted_price || 999));
-    } else if (sort === "best_reviews") {
-      sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    if (storeInfo.engine === "amazon") {
+      if (sort === "price_low")    params.set("s", "price-asc-rank");
+      if (sort === "best_reviews") params.set("s", "review-rank");
     }
 
-    // Take top 3
-    const top3 = sorted.slice(0, 3);
+    if (storeInfo.engine === "google_shopping" && max_price) {
+      params.append("tbs", `mr:1,price:1,ppr_max:${max_price}`);
+    }
 
-    const products = top3.map((item, i) => ({
-      title: item.title || "Product",
-      price: item.price || "$0.00",
-      original_price: item.old_price || item.price || "$0.00",
-      rating: item.rating ? item.rating.toString() : "4.5",
-      reviews: item.reviews ? item.reviews.toLocaleString() : "100+",
-      prime: item.source === "Amazon.com",
-      image_url: item.thumbnail || "",
-      asin: item.link ? (item.link.match(/\/dp\/([A-Z0-9]{10})/) || [])[1] || "" : "",
-      url: item.link || "",
-      badge: i === 0 ? (sort === "price_low" ? "Lowest price" : sort === "best_reviews" ? "Top rated" : "Best value") : i === 1 ? "Popular pick" : "Great option",
-      highlight: `Available on ${item.source || "Amazon"} — ${item.price || ""}`,
-      specs: [
-        item.source || "Online store",
-        item.price || "",
-        item.rating ? `${item.rating} stars` : "Highly rated",
-      ].filter(Boolean),
-    }));
+    const fetch = require("node-fetch");
+    const url   = `https://serpapi.com/search.json?${params.toString()}`;
+    console.log("[SEARCH] Calling SerpApi engine:", storeInfo.engine);
 
-    console.log("[SEARCH] Products with images:", products.filter(p => p.image_url).length);
+    const response = await fetch(url);
+    const data     = await response.json();
+    if (data.error) throw new Error("SerpApi error: " + data.error);
 
-    const spoken = products.map((p, i) =>
+    let results = data[storeInfo.resultsKey] || [];
+    console.log("[SEARCH] SerpApi returned", results.length, "results");
+    if (results.length === 0) throw new Error("No results found");
+
+    let products = results.map((item, i) => normalizeItem(item, storeInfo.engine, i, sort));
+
+    if (sort === "price_low") {
+      products.sort((a, b) => a._extracted_price - b._extracted_price);
+    } else if (sort === "best_reviews") {
+      products.sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0));
+    }
+
+    if (max_price) {
+      const filtered = products.filter(p => p._extracted_price <= max_price);
+      if (filtered.length > 0) products = filtered;
+    }
+
+    const top3 = products.slice(0, 3).map((p, i) => {
+      p.badge = i === 0
+        ? (sort === "price_low" ? "Lowest price" : sort === "best_reviews" ? "Top rated" : "Best value")
+        : i === 1 ? "Popular pick" : "Great option";
+      return p;
+    });
+
+    console.log("[SEARCH] Products with images:", top3.filter(p => p.image_url).length);
+
+    const spoken = top3.map((p, i) =>
       `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars${p.prime ? " with free Prime shipping" : ""}.`
     ).join(" ");
 
     return {
       success: true,
-      spoken: `I found ${products.length} great options sorted by ${sortText}. ${spoken} I am sending you photos by text right now. Which number would you like?`,
-      products,
+      spoken: `I found ${top3.length} great options on ${storeInfo.label} sorted by ${sortText}. ${spoken} I am sending you photos by text right now. Which number would you like?`,
+      products: top3,
     };
 
   } catch (err) {
     console.error("[SEARCH] SerpApi error:", err.message);
-
-    // Fallback to Haiku if SerpApi fails
     console.log("[SEARCH] Falling back to AI search...");
     return await fallbackSearch(query, sort, max_price);
   }
+}
+
+function resolveStore(store) {
+  if (!store) return "amazon";
+  const s = store.toLowerCase().trim();
+  if (s.includes("walmart"))                                        return "walmart";
+  if (s.includes("ebay"))                                           return "ebay";
+  if (s.includes("home depot") || s.includes("homedepot"))         return "home_depot";
+  if (s.includes("google") || s.includes("any") || s.includes("all")) return "google_shopping";
+  return "amazon";
 }
 
 async function fallbackSearch(query, sort, max_price) {
@@ -111,13 +198,13 @@ async function fallbackSearch(query, sort, max_price) {
       }],
     });
 
-    const text = response.content.filter(b => b.type === "text").map(b => b.text).join("");
+    const text    = response.content.filter(b => b.type === "text").map(b => b.text).join("");
     const cleaned = text.replace(/```json/gi, "").replace(/```/gi, "").trim();
-    const match = cleaned.match(/\[[\s\S]*\]/);
+    const match   = cleaned.match(/\[[\s\S]*\]/);
 
     if (match) {
       const products = JSON.parse(match[0]);
-      const spoken = products.map((p, i) =>
+      const spoken   = products.map((p, i) =>
         `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars.`
       ).join(" ");
       return {
