@@ -102,9 +102,11 @@ async function searchProducts({ query, sort, max_price, store }) {
     const apiKey = process.env.SERPAPI_KEY;
     if (!apiKey) throw new Error("SERPAPI_KEY not set");
 
+    // Amazon engine uses 'k' for keyword; all others use 'q'
+    const queryParam = storeInfo.engine === "amazon" ? "k" : "q";
     const params = new URLSearchParams({
       engine:  storeInfo.engine,
-      q:       query,
+      [queryParam]: query,
       api_key: apiKey,
       num:     "10",
       gl:      "us",
@@ -203,7 +205,7 @@ async function fallbackSearch(query, sort, max_price) {
     const match   = cleaned.match(/\[[\s\S]*\]/);
 
     if (match) {
-      const products = JSON.parse(match[0]);
+      const products = JSON.parse(match[0]).map(p => ({ ...p, title: p.title || p.name || "Product" }));
       const spoken   = products.map((p, i) =>
         `Option ${i + 1}: ${p.title} for ${p.price}, rated ${p.rating} stars.`
       ).join(" ");
