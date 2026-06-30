@@ -46,6 +46,7 @@ async function initDb() {
         customer_phone VARCHAR(20) NOT NULL,
         product_title TEXT,
         product_price VARCHAR(20),
+        product_cost DECIMAL(10,2) DEFAULT 0,
         product_url TEXT,
         asin VARCHAR(20),
         store VARCHAR(50) DEFAULT 'Amazon',
@@ -53,6 +54,7 @@ async function initDb() {
         tracking_number VARCHAR(100),
         carrier VARCHAR(30),
         stripe_charge_id VARCHAR(100),
+        zinc_cost DECIMAL(10,2) DEFAULT 0,
         estimated_delivery VARCHAR(100),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -64,6 +66,14 @@ async function initDb() {
         duration_seconds INTEGER DEFAULT 0,
         minutes_billed INTEGER DEFAULT 0,
         outcome VARCHAR(50),
+        transcript TEXT,
+        vapi_cost DECIMAL(10,4) DEFAULT 0,
+        anthropic_cost DECIMAL(10,4) DEFAULT 0,
+        sms_cost DECIMAL(10,4) DEFAULT 0,
+        search_cost DECIMAL(10,4) DEFAULT 0,
+        total_cost DECIMAL(10,4) DEFAULT 0,
+        revenue DECIMAL(10,4) DEFAULT 0,
+        profit DECIMAL(10,4) DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS minute_purchases (
@@ -75,6 +85,27 @@ async function initDb() {
         status VARCHAR(20) DEFAULT 'completed',
         created_at TIMESTAMP DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS cost_events (
+        id SERIAL PRIMARY KEY,
+        call_id VARCHAR(100),
+        customer_phone VARCHAR(20),
+        event_type VARCHAR(50),
+        provider VARCHAR(30),
+        cost DECIMAL(10,4) DEFAULT 0,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_cost DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS zinc_cost DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS transcript TEXT;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS vapi_cost DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS anthropic_cost DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS sms_cost DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS search_cost DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS total_cost DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS revenue DECIMAL(10,4) DEFAULT 0;
+      ALTER TABLE calls ADD COLUMN IF NOT EXISTS profit DECIMAL(10,4) DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_cost_events_call ON cost_events(call_id);
     `);
     console.log("[DB] All tables ready");
   } catch (err) {
