@@ -1,7 +1,8 @@
 require("dotenv").config();
 
 async function sendProductSMS({ to_number, products, message_text }) {
-  const apiKey = process.env.PINGRAM_API_KEY;
+  const apiKey    = process.env.TELNYX_API_KEY;
+  const fromNumber = process.env.TELNYX_FROM_NUMBER;
 
   let phone = to_number;
   let prods = products;
@@ -10,53 +11,71 @@ async function sendProductSMS({ to_number, products, message_text }) {
     return { success: false, spoken: "I need your phone number and products to send the photos." };
   }
 
-  const digits = phone.replace(/[^0-9]/g, "");
+  const digits   = phone.replace(/[^0-9]/g, "");
   const toNumber = digits.startsWith("1") ? "+" + digits : "+1" + digits;
 
-  if (!apiKey) {
+  if (!apiKey || !fromNumber) {
     const spoken = prods.map((p, i) => `Option ${i+1}: ${p.title} for ${p.price}.`).join(" ");
     return { success: true, spoken: "Here are your options. " + spoken + " Which number would you like?" };
   }
 
   try {
-    const { Pingram } = require("pingram");
-    const pingram = new Pingram({ apiKey });
+    const fetch = require("node-fetch");
+
+    const headers = {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    };
 
     console.log("[SMS] Sending to:", toNumber, "Products:", prods.length);
 
-    // Message 1 — summary of all 3 options in one text
+    // Message 1 — text summary of all options
     const summary = [
-      "🛍️ ShopAgent Results",
+      "🛙 ShopAgent Results",
       "────────────────",
       ...prods.map((p, i) =>
         `${i+1}. ${p.title}\n   ${p.price} · ${p.rating}⭐${p.prime ? " · Free shipping" : ""}`
       ),
       "────────────────",
       "Photos below 👇",
-      `📞 Say option 1, 2 or 3 to order`,
+      "📞 Say option 1, 2 or 3 to order",
     ].join("\n");
 
-    await pingram.send({
-      type: "shopagent_sms",
-      to: { number: toNumber },
-      sms: { message: summary }
-    });
+    await fetch("https://api.telnyx.com/v2/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        from: fromNumber,
+        to:   toNumber,
+        text: summary,
+      }),
+    }).then(r => r.json());
 
-    // Messages 2, 3, 4 — one photo per product
+    // Messages 2-4 — one MMS per product with photo
     for (let i = 0; i < prods.length; i++) {
-      const p = prods[i];
+      const p        = prods[i];
       const imageUrl = p.image_url || p.thumbnail || "";
 
       if (imageUrl && imageUrl.startsWith("https://")) {
-        await pingram.send({
-          type: "shopagent_sms",
-          to: { number: toNumber },
-          sms: {
-            message: `Option ${i + 1}: ${p.title} — ${p.price}`,
-            mediaUrls: [imageUrl]
-          }
+        const body = {
+          from:      fromNumber,
+          to:        toNumber,
+          text:      `Option ${i + 1}: ${p.title} — ${p.price}`,
+          media_urls: [imageUrl],
+        };
+
+        const res  = await fetch("https://api.telnyx.com/v2/messages", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
         });
-        console.log("[SMS] MMS option", i + 1);
+        const data = await res.json();
+
+        if (data.errors) {
+          console.error("[SMS] Telnyx MMS error option", i + 1, JSON.stringify(data.errors));
+        } else {
+          console.log("[SMS] MMS option", i + 1, "status:", data.data?.to?.[0]?.status);
+        }
       }
     }
 
@@ -64,7 +83,7 @@ async function sendProductSMS({ to_number, products, message_text }) {
 
     return {
       success: true,
-      spoken: `I just texted you all 3 options with photos. Take a look and tell me which number you want.`,
+      spoken: "I just texted you all 3 options with photos. Take a look and tell me which number you want.",
     };
 
   } catch (err) {
